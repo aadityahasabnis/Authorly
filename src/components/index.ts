@@ -8,3 +8,6 @@ export { TableOfContents, parseHeadings, type TocItem, type TableOfContentsProps
 export { Toolbar } from './Toolbar';
 export { BlockMenu } from './BlockMenu';
 export { BlockWrapper } from './BlockWrapper';
+export { StatusBar, calculateReadingTime, type StatusBarProps } from './StatusBar';
+export { MetadataPanel, type EditorMetadata, type MetadataPanelProps } from './MetadataPanel';
+

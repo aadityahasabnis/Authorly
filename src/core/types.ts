@@ -20,7 +20,8 @@ export type BlockType =
   | 'divider'
   | 'callout'
   | 'accordion'
-  | 'table';
+  | 'table'
+  | 'linkPreview';
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 

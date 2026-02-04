@@ -202,6 +202,47 @@ export function stripHtml(html: string): string {
 }
 
 /**
+ * Generate URL-friendly slug from text
+ */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove non-word chars
+    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with single dash
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
+}
+
+/**
+ * Generate unique heading ID with collision prevention
+ */
+const headingIdCounts: Map<string, number> = new Map();
+
+export function generateHeadingId(text: string): string {
+  const baseSlug = slugify(stripHtml(text));
+  
+  if (!baseSlug) {
+    // If slug is empty, use a default
+    return 'heading';
+  }
+  
+  // Check if we've used this slug before
+  const count = headingIdCounts.get(baseSlug) || 0;
+  headingIdCounts.set(baseSlug, count + 1);
+  
+  // If this is the first occurrence, use the base slug
+  // Otherwise, append a number
+  return count === 0 ? baseSlug : `${baseSlug}-${count}`;
+}
+
+/**
+ * Reset heading ID counter (useful when loading new content)
+ */
+export function resetHeadingIds(): void {
+  headingIdCounts.clear();
+}
+
+/**
  * Escape HTML special characters
  */
 export function escapeHtml(text: string): string {

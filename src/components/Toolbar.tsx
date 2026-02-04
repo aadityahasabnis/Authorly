@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { ToolbarProps, InlineFormat, BlockType } from '../core/types';
 import {
   Bold,
@@ -36,6 +37,9 @@ import {
   AlertCircle,
   Palette,
   X,
+  ExternalLink,
+  Edit3,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -45,6 +49,7 @@ import {
   toggleStrikethrough,
   toggleInlineCode,
   insertLink,
+  removeLink,
   setHighlightColor,
   setTextColor,
   clearFormatting,
@@ -76,15 +81,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const [activePopover, setActivePopover] = useState<PopoverType>(null);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [linkUrl, setLinkUrl] = useState('');
-  const [linkText, setLinkText] = useState('');
   const [formatState, setFormatState] = useState({
     bold: false,
     italic: false,
     underline: false,
     strikethrough: false,
   });
+  
+  // Link preview state
+  const [linkPreview, setLinkPreview] = useState<{
+    url: string;
+    element: HTMLAnchorElement;
+    position: { x: number; y: number };
+  } | null>(null);
+  
   const toolbarRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const linkPreviewRef = useRef<HTMLDivElement>(null);
+  const savedRangeRef = useRef<Range | null>(null);
+  const linkHoverTimeoutRef = useRef<number | null>(null);
+  const linkCloseTimeoutRef = useRef<number | null>(null);
 
   // Update format state on selection change (debounced to avoid flicker)
   useEffect(() => {
@@ -144,17 +160,115 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           !toolbarRef.current?.contains(e.target as Node)) {
         setActivePopover(null);
       }
+      
+      // Close link preview when clicking outside
+      if (linkPreviewRef.current && !linkPreviewRef.current.contains(e.target as Node)) {
+        setLinkPreview(null);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Detect link hover and show preview
+  useEffect(() => {
+    if (!editor?.container) return;
+
+    const handleMouseOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Clear close timeout if hovering back
+      if (linkCloseTimeoutRef.current) {
+        window.clearTimeout(linkCloseTimeoutRef.current);
+        linkCloseTimeoutRef.current = null;
+      }
+      
+      // Check if hovering over a link
+      const link = target.closest('a.cb-link') as HTMLAnchorElement;
+      if (link && link.href) {
+        // Clear any existing open timeout
+        if (linkHoverTimeoutRef.current) {
+          window.clearTimeout(linkHoverTimeoutRef.current);
+        }
+        
+        // Show preview after short delay
+        linkHoverTimeoutRef.current = window.setTimeout(() => {
+          const rect = link.getBoundingClientRect();
+          
+          setLinkPreview({
+            url: link.href,
+            element: link,
+            position: {
+              x: rect.left + window.scrollX,
+              y: rect.bottom + window.scrollY + 8,
+            },
+          });
+        }, 300); // 300ms delay
+      }
+    };
+
+    const handleMouseOut = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const relatedTarget = e.relatedTarget as HTMLElement;
+      
+      const link = target.closest('a.cb-link');
+      
+      if (link) {
+        // Clear the open timeout if mouse leaves before preview shows
+        if (linkHoverTimeoutRef.current) {
+          window.clearTimeout(linkHoverTimeoutRef.current);
+          linkHoverTimeoutRef.current = null;
+        }
+        
+        // Don't close if moving to the preview card
+        const movingToPreview = relatedTarget?.closest?.('.cb-link-preview');
+        if (!movingToPreview) {
+          // Close after a short delay
+          linkCloseTimeoutRef.current = window.setTimeout(() => {
+            setLinkPreview(null);
+          }, 200);
+        }
+      }
+    };
+
+    // Hide preview on scroll
+    const handleScroll = () => {
+      setLinkPreview(null);
+      if (linkCloseTimeoutRef.current) {
+        window.clearTimeout(linkCloseTimeoutRef.current);
+        linkCloseTimeoutRef.current = null;
+      }
+    };
+
+    editor.container.addEventListener('mouseover', handleMouseOver);
+    editor.container.addEventListener('mouseout', handleMouseOut);
+    window.addEventListener('scroll', handleScroll, true); // Use capture to catch all scroll events
+
+    return () => {
+      editor.container.removeEventListener('mouseover', handleMouseOver);
+      editor.container.removeEventListener('mouseout', handleMouseOut);
+      window.removeEventListener('scroll', handleScroll, true);
+      if (linkHoverTimeoutRef.current) {
+        window.clearTimeout(linkHoverTimeoutRef.current);
+      }
+      if (linkCloseTimeoutRef.current) {
+        window.clearTimeout(linkCloseTimeoutRef.current);
+      }
+    };
+  }, [editor]);
+
   // Open popover at button position
   const openPopover = useCallback((type: PopoverType, e: React.MouseEvent) => {
     if (activePopover === type) {
       setActivePopover(null);
       return;
+    }
+    
+    // Save the current selection before opening popover
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      savedRangeRef.current = selection.getRangeAt(0).cloneRange();
     }
     
     const button = e.currentTarget as HTMLElement;
@@ -167,18 +281,26 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     });
     setActivePopover(type);
     setLinkUrl('');
-    setLinkText('');
   }, [activePopover]);
 
   // Handle link insertion
   const handleInsertLink = useCallback(() => {
     if (linkUrl && editor?.container) {
-      insertLink(editor.container, linkUrl, linkText || undefined);
+      // Restore the saved selection before inserting link
+      if (savedRangeRef.current) {
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(savedRangeRef.current);
+        }
+      }
+      
+      insertLink(editor.container, linkUrl);
       setActivePopover(null);
       setLinkUrl('');
-      setLinkText('');
+      savedRangeRef.current = null;
     }
-  }, [linkUrl, linkText, editor]);
+  }, [linkUrl, editor]);
 
   // Handle text color
   const handleTextColor = useCallback((color: string) => {
@@ -199,6 +321,59 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       setActivePopover(null);
     }
   }, [editor]);
+
+  // Handle link preview - edit link
+  const handleEditLink = useCallback(() => {
+    if (linkPreview) {
+      const url = linkPreview.url;
+      setLinkUrl(url);
+      
+      // Select the link element
+      const selection = window.getSelection();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(linkPreview.element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        savedRangeRef.current = range.cloneRange();
+      }
+      
+      setLinkPreview(null);
+      setActivePopover('link');
+      
+      // Position the popup near the link
+      const rect = linkPreview.element.getBoundingClientRect();
+      const toolbarRect = toolbarRef.current?.getBoundingClientRect();
+      setPopoverPosition({
+        x: rect.left - (toolbarRect?.left || 0),
+        y: rect.bottom - (toolbarRect?.top || 0) + 8,
+      });
+    }
+  }, [linkPreview]);
+
+  // Handle link preview - visit link
+  const handleVisitLink = useCallback(() => {
+    if (linkPreview) {
+      window.open(linkPreview.url, '_blank', 'noopener,noreferrer');
+    }
+  }, [linkPreview]);
+
+  // Handle link preview - remove link
+  const handleRemoveLink = useCallback(() => {
+    if (linkPreview && editor?.container) {
+      // Select the link
+      const selection = window.getSelection();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(linkPreview.element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      
+      removeLink(editor.container);
+      setLinkPreview(null);
+    }
+  }, [linkPreview, editor]);
 
   // Handle export
   const handleExport = useCallback((format: 'html' | 'json') => {
@@ -537,17 +712,6 @@ ${html}
                     if (e.key === 'Escape') setActivePopover(null);
                   }}
                 />
-                <input
-                  type="text"
-                  value={linkText}
-                  onChange={(e) => setLinkText(e.target.value)}
-                  placeholder="Link text (optional)"
-                  className="cb-popover-input"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleInsertLink();
-                    if (e.key === 'Escape') setActivePopover(null);
-                  }}
-                />
                 <button
                   type="button"
                   className="cb-popover-btn-primary"
@@ -621,6 +785,65 @@ ${html}
             </div>
           )}
         </div>
+      )}
+
+      {/* Link Preview Card - rendered in portal for proper positioning */}
+      {linkPreview && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={linkPreviewRef}
+          className="cb-link-preview"
+          style={{
+            position: 'absolute',
+            left: linkPreview.position.x,
+            top: linkPreview.position.y,
+            zIndex: 10000,
+          }}
+          onMouseEnter={() => {
+            // Cancel close timeout when entering preview
+            if (linkCloseTimeoutRef.current) {
+              window.clearTimeout(linkCloseTimeoutRef.current);
+              linkCloseTimeoutRef.current = null;
+            }
+          }}
+          onMouseLeave={() => {
+            // Close preview when leaving
+            linkCloseTimeoutRef.current = window.setTimeout(() => {
+              setLinkPreview(null);
+            }, 200);
+          }}
+        >
+          <div className="cb-link-preview-content">
+            <a 
+              href={linkPreview.url} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="cb-link-preview-url"
+              title={linkPreview.url}
+            >
+              {linkPreview.url}
+            </a>
+            <div className="cb-link-preview-divider"></div>
+            <div className="cb-link-preview-actions">
+              <button
+                type="button"
+                className="cb-link-preview-btn"
+                onClick={handleEditLink}
+                title="Edit link"
+              >
+                <Edit3 size={16} />
+              </button>
+              <button
+                type="button"
+                className="cb-link-preview-btn cb-link-preview-btn-danger"
+                onClick={handleRemoveLink}
+                title="Remove link"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

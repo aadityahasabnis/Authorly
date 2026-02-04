@@ -20,6 +20,7 @@ import {
   AlertCircle,
   ChevronDown,
   Table,
+  Link,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -141,6 +142,13 @@ const BLOCK_MENU_ITEMS: BlockMenuItem[] = [
     icon: Table,
     keywords: ['table', 'grid', 'rows', 'columns'],
   },
+  {
+    type: 'linkPreview',
+    label: 'Link Preview',
+    description: 'Rich preview card for URLs',
+    icon: Link,
+    keywords: ['link', 'url', 'preview', 'embed', 'opengraph'],
+  },
 ];
 
 export const BlockMenu: React.FC<BlockMenuProps> = ({
@@ -153,6 +161,7 @@ export const BlockMenu: React.FC<BlockMenuProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
 
   // Filter items based on search
   const filteredItems = BLOCK_MENU_ITEMS.filter((item) => {
@@ -169,6 +178,18 @@ export const BlockMenu: React.FC<BlockMenuProps> = ({
   useEffect(() => {
     setSelectedIndex(0);
   }, [search]);
+
+  // Scroll selected item into view when selection changes
+  useEffect(() => {
+    const selectedElement = itemRefs.current.get(selectedIndex);
+    if (selectedElement) {
+      selectedElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+  }, [selectedIndex]);
 
   // Focus input on mount
   useEffect(() => {
@@ -255,6 +276,13 @@ export const BlockMenu: React.FC<BlockMenuProps> = ({
           filteredItems.map((item, index) => (
             <button
               key={`${item.type}-${item.label}`}
+              ref={(el) => {
+                if (el) {
+                  itemRefs.current.set(index, el);
+                } else {
+                  itemRefs.current.delete(index);
+                }
+              }}
               type="button"
               className={`cb-block-menu-item ${
                 index === selectedIndex ? 'cb-block-menu-item-selected' : ''

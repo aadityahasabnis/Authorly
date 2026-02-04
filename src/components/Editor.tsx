@@ -40,6 +40,7 @@ import {
 } from '../utils/helpers';
 import { Toolbar } from './Toolbar';
 import { BlockMenu } from './BlockMenu';
+import { StatusBar, calculateReadingTime } from './StatusBar';
 import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { addTableRow, addTableColumn, deleteTableRow, deleteTableColumn, getFocusedCell, getCellPosition } from '../blocks/table';
 import { setImageSrc, createImageFromFile, setImageAlign, createCropModal } from '../blocks/image';
@@ -285,6 +286,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         if (className.includes('callout')) return 'callout';
         if (className.includes('divider')) return 'divider';
         if (className.includes('table')) return 'table';
+        if (className.includes('link-preview')) return 'linkPreview';
         return 'paragraph';
       default:
         return 'paragraph';
@@ -354,6 +356,9 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           rows.push({ cells });
         });
         data.rows = rows;
+        break;
+      case 'linkPreview':
+        data.url = element.getAttribute('data-url') || '';
         break;
     }
     
@@ -1666,10 +1671,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         />
       )}
 
-      <div className={`${classPrefix}-status`}>
-        <span>{editorState.wordCount} words</span>
-        <span>{editorState.charCount} characters</span>
-      </div>
+      <StatusBar
+        wordCount={editorState.wordCount}
+        charCount={editorState.charCount}
+        readingTime={calculateReadingTime(editorState.wordCount)}
+        darkMode={darkMode}
+      />
     </div>
   );
 };

@@ -15,6 +15,8 @@ export { TableOfContents, parseHeadings, type TocItem, type TableOfContentsProps
 export { Toolbar } from './components/Toolbar';
 export { BlockMenu } from './components/BlockMenu';
 export { BlockWrapper } from './components/BlockWrapper';
+export { StatusBar, calculateReadingTime, type StatusBarProps } from './components/StatusBar';
+export { MetadataPanel, type EditorMetadata, type MetadataPanelProps } from './components/MetadataPanel';
 
 // Core
 export { blockRegistry, BlockRegistry } from './core/block-registry';

@@ -45,6 +45,7 @@ export {
   getFocusedCell,
   getCellPosition,
 } from './table';
+export { linkPreviewBlock } from './linkPreview';
 
 // Import all blocks for registration
 import { paragraphBlock } from './paragraph';
@@ -65,6 +66,7 @@ import { dividerBlock } from './divider';
 import { calloutBlock } from './callout';
 import { accordionBlock } from './accordion';
 import { tableBlock } from './table';
+import { linkPreviewBlock } from './linkPreview';
 
 import type { BlockDefinition } from '../core/types';
 
@@ -90,6 +92,7 @@ export const allBlocks: BlockDefinition[] = [
   calloutBlock,
   accordionBlock,
   tableBlock,
+  linkPreviewBlock,
 ];
 
 /**

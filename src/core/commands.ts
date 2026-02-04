@@ -114,19 +114,21 @@ export function toggleInlineCode(container: HTMLElement): void {
 }
 
 /**
- * Insert or edit link
+ * Insert or edit link - properly handles formatted text
  */
 export function insertLink(container: HTMLElement, url: string, text?: string): void {
   const selection = window.getSelection();
-  if (!selection) return;
+  if (!selection || !selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
 
   if (selection.isCollapsed && text) {
     // No selection, insert link with text
     const link = document.createElement('a');
     link.href = url;
     link.textContent = text;
+    link.className = 'cb-link';
     
-    const range = selection.getRangeAt(0);
     range.insertNode(link);
     
     // Move cursor after link
@@ -135,16 +137,82 @@ export function insertLink(container: HTMLElement, url: string, text?: string): 
     newRange.collapse(true);
     selection.removeAllRanges();
     selection.addRange(newRange);
-  } else {
-    // Wrap selection in link
-    document.execCommand('createLink', false, url);
+  } else if (!selection.isCollapsed) {
+    // Check if selection already contains a link
+    let parentLink = range.commonAncestorContainer as Node | null;
+    while (parentLink && parentLink !== container) {
+      if (parentLink instanceof HTMLAnchorElement) {
+        // Update existing link
+        parentLink.href = url;
+        return;
+      }
+      parentLink = parentLink.parentNode;
+    }
+
+    // Wrap selection in link, preserving formatting
+    const link = document.createElement('a');
+    link.href = url;
+    link.className = 'cb-link';
+    
+    try {
+      // Try to wrap the selection
+      const contents = range.extractContents();
+      link.appendChild(contents);
+      range.insertNode(link);
+      
+      // Select the link
+      const newRange = document.createRange();
+      newRange.selectNodeContents(link);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
+    } catch (error) {
+      // Fallback to execCommand if custom wrapping fails
+      document.execCommand('createLink', false, url);
+      
+      // Add class to the created link
+      const createdLink = range.commonAncestorContainer.parentElement?.closest('a');
+      if (createdLink) {
+        createdLink.className = 'cb-link';
+      }
+    }
   }
 }
 
 /**
- * Remove link
+ * Remove link - properly handles nested formatting
  */
 export function removeLink(container: HTMLElement): void {
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
+  let node = range.commonAncestorContainer as Node | null;
+
+  // Find the link element
+  while (node && node !== container) {
+    if (node instanceof HTMLAnchorElement) {
+      // Save selection position
+      const parent = node.parentNode;
+      if (!parent) return;
+
+      // Extract contents of the link
+      const fragment = document.createDocumentFragment();
+      while (node.firstChild) {
+        fragment.appendChild(node.firstChild);
+      }
+
+      // Replace link with its contents
+      parent.replaceChild(fragment, node);
+
+      // Restore selection
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    node = node.parentNode;
+  }
+
+  // Fallback to execCommand
   document.execCommand('unlink', false);
 }
 
