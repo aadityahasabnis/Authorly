@@ -2,7 +2,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import dts from 'vite-plugin-dts';
-import { resolve } from 'path';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
   if (mode === 'lib') {
@@ -17,7 +22,7 @@ export default defineConfig(({ mode }) => {
       ],
       build: {
         lib: {
-          entry: resolve(__dirname, 'src/index.ts'),
+          entry: path.resolve(__dirname, 'src/index.ts'),
           name: 'ContentBlocks',
           formats: ['es', 'cjs'],
           fileName: (format) => `index.${format === 'es' ? 'esm' : format}.js`,
@@ -33,10 +38,11 @@ export default defineConfig(({ mode }) => {
         },
         cssCodeSplit: false,
         sourcemap: true,
+        minify: 'esbuild',
       },
       resolve: {
         alias: {
-          '@': resolve(__dirname, 'src'),
+          '@': path.resolve(__dirname, 'src'),
         },
       },
     };
@@ -47,7 +53,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     resolve: {
       alias: {
-        '@': resolve(__dirname, 'src'),
+        '@': path.resolve(__dirname, 'src'),
       },
     },
     server: {
