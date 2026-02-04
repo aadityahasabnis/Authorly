@@ -1,7 +1,10 @@
 {
-  "name": "authorly",
+  "name": "@aadityahasabnis/authorly",
   "version": "0.1.0",
   "description": "A rich text editor for authors, blogs, and documentation with clean, publish-ready output.",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
@@ -22,7 +25,9 @@
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx",
     "test": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "publish:github": "npm version patch && npm publish",
+    "publish:npm": "npm run build && npm pkg set name=authorly-editor && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"
   },
   "peerDependencies": {
     "react": ">=17.0.0",
