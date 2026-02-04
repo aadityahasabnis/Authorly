@@ -52,15 +52,15 @@
 ## Installation
 
 ```bash
-npm install authorly
+npm install authorly-editor
 ```
 
 ```bash
-yarn add authorly
+yarn add authorly-editor
 ```
 
 ```bash
-pnpm add authorly
+pnpm add authorly-editor
 ```
 
 ---
@@ -68,7 +68,7 @@ pnpm add authorly
 ## Quick Start
 
 ```tsx
-import { ContentBlocksEditor } from 'authorly';
+import { ContentBlocksEditor } from 'authorly-editor';
 
 function App() {
   const [content, setContent] = useState('<p>Hello World!</p>');
@@ -93,7 +93,7 @@ That's it. No configuration needed.
 The main editor component for creating and editing content.
 
 ```tsx
-import { ContentBlocksEditor } from 'authorly';
+import { ContentBlocksEditor } from 'authorly-editor';
 
 <ContentBlocksEditor
   initialContent="<p>Start writing...</p>"
@@ -110,7 +110,7 @@ import { ContentBlocksEditor } from 'authorly';
 Display saved HTML content with beautiful styling. No editor overhead.
 
 ```tsx
-import { ContentBlocksRenderer } from 'authorly';
+import { ContentBlocksRenderer } from 'authorly-editor';
 
 <ContentBlocksRenderer
   html={savedContent}
@@ -124,7 +124,7 @@ import { ContentBlocksRenderer } from 'authorly';
 Auto-generate navigation from your content headings.
 
 ```tsx
-import { TableOfContents, ContentBlocksRenderer } from 'authorly';
+import { TableOfContents, ContentBlocksRenderer } from 'authorly-editor';
 
 <div style={{ display: 'flex' }}>
   <aside style={{ width: 200 }}>
@@ -205,7 +205,7 @@ Access editor methods using a ref:
 
 ```tsx
 import { useRef } from 'react';
-import { ContentBlocksEditor, EditorRef } from 'authorly';
+import { ContentBlocksEditor, EditorRef } from 'authorly-editor';
 
 function MyEditor() {
   const editorRef = useRef<EditorRef>(null);
@@ -268,7 +268,7 @@ import {
   ContentBlocksEditor, 
   ContentBlocksRenderer,
   EditorRef 
-} from 'authorly';
+} from 'authorly-editor';
 
 function BlogEditor() {
   const editorRef = useRef<EditorRef>(null);
@@ -309,7 +309,7 @@ function BlogEditor() {
 import { 
   ContentBlocksRenderer, 
   TableOfContents 
-} from 'authorly';
+} from 'authorly-editor';
 
 function DocsPage({ content }) {
   return (
@@ -337,7 +337,7 @@ function DocsPage({ content }) {
 
 ```tsx
 import { useState } from 'react';
-import { ContentBlocksEditor } from 'authorly';
+import { ContentBlocksEditor } from 'authorly-editor';
 
 function ThemedEditor() {
   const [darkMode, setDarkMode] = useState(false);
@@ -400,7 +400,7 @@ Override these CSS variables to customize the editor appearance:
 Register your own block types:
 
 ```tsx
-import { blockRegistry, BlockDefinition } from 'authorly';
+import { blockRegistry, BlockDefinition } from 'authorly-editor';
 
 const myCustomBlock: BlockDefinition = {
   name: 'custom',
@@ -450,7 +450,7 @@ import type {
   ContentBlocksRendererProps,
   TableOfContentsProps,
   TocItem,
-} from 'authorly';
+} from 'authorly-editor';
 ```
 
 ---

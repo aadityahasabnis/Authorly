@@ -16,7 +16,7 @@ import {
 //   ContentBlocksEditor, 
 //   ContentBlocksRenderer, 
 //   TableOfContents 
-// } from 'authorly';
+// } from 'authorly-editor';
 
 // ============================================
 // Example 1: Basic Editor Usage
@@ -289,11 +289,11 @@ const buttonStyle = (darkMode: boolean): React.CSSProperties => ({
 // Code Examples (for documentation)
 // ============================================
 const codeExamples = {
-  installation: `npm install authorly
+  installation: `npm install authorly-editor
 # or
-yarn add authorly`,
+yarn add authorly-editor`,
 
-  basicEditor: `import { ContentBlocksEditor } from 'authorly';
+  basicEditor: `import { ContentBlocksEditor } from 'authorly-editor';
 
 function MyEditor() {
   const [html, setHtml] = useState('<p>Hello</p>');
@@ -308,7 +308,7 @@ function MyEditor() {
   );
 }`,
 
-  editorWithRef: `import { ContentBlocksEditor, EditorRef } from 'authorly';
+  editorWithRef: `import { ContentBlocksEditor, EditorRef } from 'authorly-editor';
 
 function MyEditor() {
   const editorRef = useRef<EditorRef>(null);
@@ -331,7 +331,7 @@ function MyEditor() {
   );
 }`,
 
-  renderer: `import { ContentBlocksRenderer } from 'authorly';
+  renderer: `import { ContentBlocksRenderer } from 'authorly-editor';
 
 function BlogPost({ content }) {
   return (
@@ -344,7 +344,7 @@ function BlogPost({ content }) {
   );
 }`,
 
-  tableOfContents: `import { TableOfContents, ContentBlocksRenderer } from 'authorly';
+  tableOfContents: `import { TableOfContents, ContentBlocksRenderer } from 'authorly-editor';
 
 function DocumentPage({ content }) {
   return (
@@ -371,7 +371,7 @@ function DocumentPage({ content }) {
   ContentBlocksRenderer, 
   TableOfContents,
   EditorRef 
-} from 'authorly';
+} from 'authorly-editor';
 
 function BlogEditor() {
   const editorRef = useRef<EditorRef>(null);
