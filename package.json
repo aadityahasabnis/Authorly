@@ -1,6 +1,6 @@
 {
   "name": "@aadityahasabnis/authorly",
-  "version": "0.1.4",
+  "version": "0.1.",
   "description": "A rich text editor for authors, blogs, and documentation with clean, publish-ready output.",
   "publishConfig": {
     "access": "public",
@@ -31,11 +31,11 @@
     "publish:npm": "npm run build && npm pkg set name=authorly-editor && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"
   },
   "peerDependencies": {
-    "react": ">=17.0.0",
-    "react-dom": ">=17.0.0"
+    "react": ">=17.0.0 || ^19.0.0",
+    "react-dom": ">=17.0.0 || ^19.0.0"
   },
   "dependencies": {
-    "lucide-react": "^0.294.0"
+    "lucide-react": "^0.460.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
