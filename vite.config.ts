@@ -28,7 +28,7 @@ export default defineConfig(({ mode }) => {
           fileName: (format) => `index.${format === 'es' ? 'esm' : format}.js`,
         },
         rollupOptions: {
-          external: ['react', 'react-dom', 'react/jsx-runtime'],
+          external: ['react', 'react-dom', 'react/jsx-runtime', '@excalidraw/excalidraw', 'lucide-react'],
           output: {
             globals: {
               react: 'React',
