@@ -31,10 +31,10 @@
     "publish:npm": "npm run build && npm pkg set name=authorly-editor && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"
   },
   "peerDependencies": {
-    "react": ">=17.0.0 || ^19.0.0",
-    "react-dom": ">=17.0.0 || ^19.0.0",
     "@excalidraw/excalidraw": "^0.18.0",
-    "lucide-react": "^0.460.0"
+    "lucide-react": "^0.460.0",
+    "react": ">=17.0.0 || ^19.0.0",
+    "react-dom": ">=17.0.0 || ^19.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
