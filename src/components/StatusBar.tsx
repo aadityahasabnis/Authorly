@@ -3,13 +3,14 @@
  */
 
 import React from 'react';
-import { Clock, FileText, Type, Calendar } from 'lucide-react';
+import { Clock, FileText, Type, Calendar, CheckSquare } from 'lucide-react';
 
 export interface StatusBarProps {
   wordCount: number;
   charCount: number;
   readingTime: number; // in minutes
   lastSaved?: Date;
+  selectedBlockCount?: number; // Number of selected blocks
   className?: string;
   darkMode?: boolean;
 }
@@ -81,6 +82,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   charCount,
   readingTime,
   lastSaved,
+  selectedBlockCount = 0,
   className = '',
   darkMode = false,
 }) => {
@@ -90,6 +92,16 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       role="status"
       aria-label="Editor statistics"
     >
+      {/* Selected Blocks Count - Only show when blocks are selected */}
+      {selectedBlockCount > 0 && (
+        <div className="cb-status-item cb-status-highlight" title="Selected blocks">
+          <CheckSquare size={14} className="cb-status-icon" />
+          <span className="cb-status-label">
+            {selectedBlockCount} {selectedBlockCount === 1 ? 'block' : 'blocks'} selected
+          </span>
+        </div>
+      )}
+
       {/* Word Count */}
       <div className="cb-status-item" title="Word count">
         <Type size={14} className="cb-status-icon" />

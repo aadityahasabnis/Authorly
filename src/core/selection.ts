@@ -161,6 +161,12 @@ export function setCursorPosition(
   element: HTMLElement,
   offset: number
 ): boolean {
+  // MEDIUM-PRIORITY FIX (Bug #7): Add null checks for element and validate offset
+  // Prevents errors when element is null or offset is invalid
+  if (!element || offset < 0) {
+    return false;
+  }
+
   const walker = document.createTreeWalker(
     element,
     NodeFilter.SHOW_TEXT,
@@ -171,11 +177,16 @@ export function setCursorPosition(
   let node: Node | null;
 
   while ((node = walker.nextNode())) {
+    // MEDIUM-PRIORITY FIX (Bug #7): Add null check for node.textContent
     const nodeLength = node.textContent?.length || 0;
     
     if (currentOffset + nodeLength >= offset) {
       const range = document.createRange();
-      range.setStart(node, offset - currentOffset);
+      const relativeOffset = offset - currentOffset;
+      
+      // MEDIUM-PRIORITY FIX (Bug #7): Ensure relativeOffset doesn't exceed nodeLength
+      const safeOffset = Math.min(relativeOffset, nodeLength);
+      range.setStart(node, safeOffset);
       range.collapse(true);
 
       const selection = window.getSelection();
@@ -186,6 +197,20 @@ export function setCursorPosition(
       }
     }
     currentOffset += nodeLength;
+  }
+
+  // MEDIUM-PRIORITY FIX (Bug #7): If offset is beyond content, place cursor at end
+  if (offset >= currentOffset && element.childNodes.length > 0) {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    }
   }
 
   return false;

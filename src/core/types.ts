@@ -21,7 +21,8 @@ export type BlockType =
   | 'callout'
   | 'accordion'
   | 'table'
-  | 'linkPreview';
+  | 'linkPreview'
+  | 'date';
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -171,6 +172,12 @@ export interface TableCell {
   rowSpan?: number;
 }
 
+export interface DateData extends BaseBlockData {
+  type: 'date';
+  date: Date | string;
+  format?: string;
+}
+
 export type BlockData =
   | ParagraphData
   | HeadingData
@@ -182,7 +189,8 @@ export type BlockData =
   | DividerData
   | CalloutData
   | AccordionData
-  | TableData;
+  | TableData
+  | DateData;
 
 // ============================================
 // Editor Configuration
@@ -227,6 +235,15 @@ export interface EditorConfig {
 // Editor State
 // ============================================
 
+export interface HistoryEntry {
+  html: string;
+  cursorPosition: {
+    blockId: string | null;
+    offset: number;
+    isCollapsed: boolean;
+  } | null;
+}
+
 export interface EditorState {
   /** All block elements */
   blocks: HTMLElement[];
@@ -234,10 +251,10 @@ export interface EditorState {
   activeBlock: HTMLElement | null;
   /** Current selection */
   selection: Selection | null;
-  /** Undo stack */
-  undoStack: string[];
-  /** Redo stack */
-  redoStack: string[];
+  /** Undo stack with cursor position tracking */
+  undoStack: HistoryEntry[];
+  /** Redo stack with cursor position tracking */
+  redoStack: HistoryEntry[];
   /** Current word count */
   wordCount: number;
   /** Current character count */
@@ -418,6 +435,6 @@ export interface ToolbarProps {
 export interface BlockMenuProps {
   editor: EditorInstance;
   position: Point;
-  onSelect: (type: BlockType, data?: Record<string, any>) => void;
+  onSelect: (type: BlockType, data?: Record<string, any>, inline?: boolean) => void;
   onClose: () => void;
 }

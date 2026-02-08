@@ -34,12 +34,19 @@ export function deepClone<T>(obj: T): T {
 export function debounce<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number
-): (...args: Parameters<T>) => void {
+): ((...args: Parameters<T>) => void) & { cancel: () => void } {
   let timeoutId: ReturnType<typeof setTimeout>;
-  return function (...args: Parameters<T>) {
+  
+  const debounced = function (...args: Parameters<T>) {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn(...args), delay);
   };
+  
+  debounced.cancel = function () {
+    clearTimeout(timeoutId);
+  };
+  
+  return debounced as ((...args: Parameters<T>) => void) & { cancel: () => void };
 }
 
 /**

@@ -40,6 +40,13 @@ import {
   ExternalLink,
   Edit3,
   Trash2,
+  Calendar,
+  Clock,
+  Circle,
+  ChevronUp,
+  ChevronDown as ChevronDownIcon,
+  CaseSensitive,
+  ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -71,7 +78,7 @@ interface ToolbarGroup {
   buttons: ToolbarButton[];
 }
 
-type PopoverType = 'link' | 'highlight' | 'textColor' | null;
+type PopoverType = 'link' | 'highlight' | 'textColor' | 'date' | 'time' | 'textCase' | null;
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   editor,
@@ -95,12 +102,39 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     position: { x: number; y: number };
   } | null>(null);
   
+  // Date calendar picker state
+  const [dateCalendar, setDateCalendar] = useState<{
+    date: Date;
+    element: HTMLElement;
+    position: { x: number; y: number };
+  } | null>(null);
+  
+  // Time picker state
+  const [timePickerState, setTimePickerState] = useState({
+    hour: 12,
+    minute: 0,
+    period: 'AM' as 'AM' | 'PM',
+    timezone: 'IST',
+  });
+  
+  // Time picker hover state (for editing existing time)
+  const [timePicker, setTimePicker] = useState<{
+    element: HTMLElement;
+    position: { x: number; y: number };
+  } | null>(null);
+  
   const toolbarRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const linkPreviewRef = useRef<HTMLDivElement>(null);
+  const dateCalendarRef = useRef<HTMLDivElement>(null);
+  const timePickerRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
   const linkHoverTimeoutRef = useRef<number | null>(null);
   const linkCloseTimeoutRef = useRef<number | null>(null);
+  const dateHoverTimeoutRef = useRef<number | null>(null);
+  const dateCloseTimeoutRef = useRef<number | null>(null);
+  const timeHoverTimeoutRef = useRef<number | null>(null);
+  const timeCloseTimeoutRef = useRef<number | null>(null);
 
   // Update format state on selection change (debounced to avoid flicker)
   useEffect(() => {
@@ -159,17 +193,57 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
           !toolbarRef.current?.contains(e.target as Node)) {
         setActivePopover(null);
+        
+        // Restore selection when clicking outside
+        setTimeout(() => {
+          if (savedRangeRef.current && editor?.container) {
+            try {
+              const selection = window.getSelection();
+              if (selection) {
+                selection.removeAllRanges();
+                selection.addRange(savedRangeRef.current);
+                
+                // Focus the contenteditable element
+                const editableElement = savedRangeRef.current.commonAncestorContainer;
+                let focusTarget: HTMLElement | null = null;
+                
+                if (editableElement.nodeType === Node.ELEMENT_NODE) {
+                  focusTarget = editableElement as HTMLElement;
+                } else {
+                  focusTarget = editableElement.parentElement;
+                }
+                
+                while (focusTarget && focusTarget !== editor.container) {
+                  if (focusTarget.getAttribute('contenteditable') === 'true') {
+                    focusTarget.focus();
+                    break;
+                  }
+                  focusTarget = focusTarget.parentElement;
+                }
+              }
+            } catch (error) {
+              console.error('Failed to restore selection:', error);
+            } finally {
+              savedRangeRef.current = null;
+            }
+          }
+        }, 0);
       }
       
       // Close link preview when clicking outside
       if (linkPreviewRef.current && !linkPreviewRef.current.contains(e.target as Node)) {
         setLinkPreview(null);
       }
+      
+      // Close date calendar when clicking outside
+      if (dateCalendarRef.current && !dateCalendarRef.current.contains(e.target as Node)) {
+        setDateCalendar(null);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [editor]);
 
   // Detect link hover and show preview
   useEffect(() => {
@@ -258,6 +332,173 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     };
   }, [editor]);
 
+  // Detect date hover and show calendar picker
+  useEffect(() => {
+    if (!editor?.container) return;
+
+    const handleMouseOver = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Clear close timeout if hovering back
+      if (dateCloseTimeoutRef.current) {
+        window.clearTimeout(dateCloseTimeoutRef.current);
+        dateCloseTimeoutRef.current = null;
+      }
+      
+      // Check if hovering over a date element
+      const dateEl = target.closest('.cb-date-inline') as HTMLElement;
+      if (dateEl) {
+        // Clear any existing open timeout
+        if (dateHoverTimeoutRef.current) {
+          window.clearTimeout(dateHoverTimeoutRef.current);
+        }
+        
+        // Show calendar after short delay
+        dateHoverTimeoutRef.current = window.setTimeout(() => {
+          const rect = dateEl.getBoundingClientRect();
+          const dateStr = dateEl.getAttribute('data-date') || new Date().toISOString();
+          const date = new Date(dateStr);
+          
+          setDateCalendar({
+            date,
+            element: dateEl,
+            position: {
+              x: rect.left + window.scrollX,
+              y: rect.bottom + window.scrollY + 8,
+            },
+          });
+        }, 300); // 300ms delay
+      }
+      
+      // Check if hovering over a time element
+      const timeEl = target.closest('.cb-time-inline') as HTMLElement;
+      if (timeEl) {
+        // Clear any existing open timeout
+        if (timeHoverTimeoutRef.current) {
+          window.clearTimeout(timeHoverTimeoutRef.current);
+        }
+        
+        // Show time picker after short delay
+        timeHoverTimeoutRef.current = window.setTimeout(() => {
+          const rect = timeEl.getBoundingClientRect();
+          const hour = parseInt(timeEl.getAttribute('data-hour') || '12', 10);
+          const minute = parseInt(timeEl.getAttribute('data-minute') || '0', 10);
+          const period = (timeEl.getAttribute('data-period') || 'AM') as 'AM' | 'PM';
+          const timezone = timeEl.getAttribute('data-timezone') || 'IST';
+          
+          setTimePickerState({ hour, minute, period, timezone });
+          setTimePicker({
+            element: timeEl,
+            position: {
+              x: rect.left + window.scrollX,
+              y: rect.bottom + window.scrollY + 8,
+            },
+          });
+        }, 300); // 300ms delay
+      }
+    };
+
+    const handleMouseOut = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const relatedTarget = e.relatedTarget as HTMLElement;
+      
+      const dateEl = target.closest('.cb-date-inline');
+      
+      if (dateEl) {
+        // Clear the open timeout if mouse leaves before calendar shows
+        if (dateHoverTimeoutRef.current) {
+          window.clearTimeout(dateHoverTimeoutRef.current);
+          dateHoverTimeoutRef.current = null;
+        }
+        
+        // Don't close if moving to the calendar
+        const movingToCalendar = relatedTarget?.closest?.('.cb-date-calendar');
+        if (!movingToCalendar) {
+          // Close after a short delay
+          dateCloseTimeoutRef.current = window.setTimeout(() => {
+            setDateCalendar(null);
+          }, 200);
+        }
+      }
+      
+      const timeEl = target.closest('.cb-time-inline');
+      
+      if (timeEl) {
+        // Clear the open timeout if mouse leaves before picker shows
+        if (timeHoverTimeoutRef.current) {
+          window.clearTimeout(timeHoverTimeoutRef.current);
+          timeHoverTimeoutRef.current = null;
+        }
+        
+        // Don't close if moving to the time picker
+        const movingToPicker = relatedTarget?.closest?.('.cb-time-picker-hover');
+        if (!movingToPicker) {
+          // Close after a short delay
+          timeCloseTimeoutRef.current = window.setTimeout(() => {
+            setTimePicker(null);
+          }, 200);
+        }
+      }
+    };
+
+    // Hide calendar on scroll
+    const handleScroll = () => {
+      setDateCalendar(null);
+      setTimePicker(null);
+      if (dateCloseTimeoutRef.current) {
+        window.clearTimeout(dateCloseTimeoutRef.current);
+        dateCloseTimeoutRef.current = null;
+      }
+      if (timeCloseTimeoutRef.current) {
+        window.clearTimeout(timeCloseTimeoutRef.current);
+        timeCloseTimeoutRef.current = null;
+      }
+    };
+
+    editor.container.addEventListener('mouseover', handleMouseOver);
+    editor.container.addEventListener('mouseout', handleMouseOut);
+    window.addEventListener('scroll', handleScroll, true);
+
+    return () => {
+      editor.container.removeEventListener('mouseover', handleMouseOver);
+      editor.container.removeEventListener('mouseout', handleMouseOut);
+      window.removeEventListener('scroll', handleScroll, true);
+      if (dateHoverTimeoutRef.current) {
+        window.clearTimeout(dateHoverTimeoutRef.current);
+      }
+      if (dateCloseTimeoutRef.current) {
+        window.clearTimeout(dateCloseTimeoutRef.current);
+      }
+      if (timeHoverTimeoutRef.current) {
+        window.clearTimeout(timeHoverTimeoutRef.current);
+      }
+      if (timeCloseTimeoutRef.current) {
+        window.clearTimeout(timeCloseTimeoutRef.current);
+      }
+    };
+  }, [editor]);
+
+  // Cleanup all timeouts on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      const timeoutRefs = [
+        linkHoverTimeoutRef,
+        linkCloseTimeoutRef,
+        dateHoverTimeoutRef,
+        dateCloseTimeoutRef,
+        timeHoverTimeoutRef,
+        timeCloseTimeoutRef,
+      ];
+      
+      timeoutRefs.forEach(ref => {
+        if (ref.current !== null) {
+          window.clearTimeout(ref.current);
+          ref.current = null;
+        }
+      });
+    };
+  }, []);
+
   // Open popover at button position
   const openPopover = useCallback((type: PopoverType, e: React.MouseEvent) => {
     if (activePopover === type) {
@@ -265,11 +506,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       return;
     }
     
-    // Save the current selection before opening popover
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      savedRangeRef.current = selection.getRangeAt(0).cloneRange();
-    }
+    // Note: Selection is saved in toolbar button's onMouseDown handler
+    // to capture it before the editor loses focus
     
     const button = e.currentTarget as HTMLElement;
     const rect = button.getBoundingClientRect();
@@ -282,6 +520,47 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     setActivePopover(type);
     setLinkUrl('');
   }, [activePopover]);
+
+  // Close popover and restore selection
+  const handleClosePopover = useCallback(() => {
+    setActivePopover(null);
+    
+    // Restore the saved selection after popover closes
+    setTimeout(() => {
+      if (savedRangeRef.current && editor?.container) {
+        try {
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(savedRangeRef.current);
+            
+            // Focus the editor to ensure selection is visible
+            const editableElement = savedRangeRef.current.commonAncestorContainer;
+            let focusTarget: HTMLElement | null = null;
+            
+            if (editableElement.nodeType === Node.ELEMENT_NODE) {
+              focusTarget = editableElement as HTMLElement;
+            } else {
+              focusTarget = editableElement.parentElement;
+            }
+            
+            // Find the contenteditable element
+            while (focusTarget && focusTarget !== editor.container) {
+              if (focusTarget.getAttribute('contenteditable') === 'true') {
+                focusTarget.focus();
+                break;
+              }
+              focusTarget = focusTarget.parentElement;
+            }
+          }
+        } catch (error) {
+          console.error('Failed to restore selection:', error);
+        } finally {
+          savedRangeRef.current = null;
+        }
+      }
+    }, 0);
+  }, [editor]);
 
   // Handle link insertion
   const handleInsertLink = useCallback(() => {
@@ -305,20 +584,40 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   // Handle text color
   const handleTextColor = useCallback((color: string) => {
     if (editor?.container) {
+      // Restore selection before applying color
+      if (savedRangeRef.current) {
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(savedRangeRef.current);
+        }
+      }
+      
       setTextColor(editor.container, color);
       setActivePopover(null);
+      savedRangeRef.current = null;
     }
   }, [editor]);
 
   // Handle highlight color
   const handleHighlight = useCallback((color: string) => {
     if (editor?.container) {
+      // Restore selection before applying highlight
+      if (savedRangeRef.current) {
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(savedRangeRef.current);
+        }
+      }
+      
       if (color === 'transparent') {
         document.execCommand('removeFormat', false);
       } else {
         setHighlightColor(editor.container, color);
       }
       setActivePopover(null);
+      savedRangeRef.current = null;
     }
   }, [editor]);
 
@@ -422,6 +721,238 @@ ${html}
     URL.revokeObjectURL(url);
   }, [editor]);
 
+  // Handle date insertion
+  const handleInsertDate = useCallback((date: Date) => {
+    if (!editor?.container) return;
+    
+    // Restore the saved selection before inserting date
+    let range: Range;
+    if (savedRangeRef.current) {
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(savedRangeRef.current);
+      }
+      range = savedRangeRef.current;
+    } else {
+      const selection = window.getSelection();
+      if (!selection || !selection.rangeCount) return;
+      range = selection.getRangeAt(0);
+    }
+    
+    const selection = window.getSelection();
+    if (!selection) return;
+    
+    // Import date block functions
+    const formatDate = (date: Date): string => {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      
+      const dayName = days[date.getDay()];
+      const day = date.getDate();
+      const monthName = months[date.getMonth()];
+      const year = date.getFullYear();
+      
+      return `${dayName}, ${day} ${monthName} ${year}`;
+    };
+    
+    // Create date span element
+    const dateSpan = document.createElement('span');
+    dateSpan.className = 'cb-date-inline';
+    dateSpan.setAttribute('data-date', date.toISOString());
+    dateSpan.setAttribute('contenteditable', 'false');
+    dateSpan.textContent = formatDate(date);
+    
+    // Insert at cursor
+    range.deleteContents();
+    range.insertNode(dateSpan);
+    
+    // Move cursor after the date
+    range.setStartAfter(dateSpan);
+    range.setEndAfter(dateSpan);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+    setActivePopover(null);
+    savedRangeRef.current = null;
+  }, [editor]);
+
+  // Handle time insertion
+  const handleInsertTime = useCallback((hour: number, minute: number, period: 'AM' | 'PM', timezone: string) => {
+    if (!editor?.container) return;
+    
+    // Restore the saved selection before inserting time
+    let range: Range;
+    if (savedRangeRef.current) {
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(savedRangeRef.current);
+      }
+      range = savedRangeRef.current;
+    } else {
+      const selection = window.getSelection();
+      if (!selection || !selection.rangeCount) return;
+      range = selection.getRangeAt(0);
+    }
+    
+    const selection = window.getSelection();
+    if (!selection) return;
+    
+    // Format time as HH:MM AM/PM TZ
+    const timeString = `${hour}:${minute.toString().padStart(2, '0')} ${period} ${timezone}`;
+    
+    // Create time span element
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'cb-time-inline';
+    timeSpan.setAttribute('data-time', timeString);
+    timeSpan.setAttribute('data-hour', hour.toString());
+    timeSpan.setAttribute('data-minute', minute.toString());
+    timeSpan.setAttribute('data-period', period);
+    timeSpan.setAttribute('data-timezone', timezone);
+    timeSpan.setAttribute('contenteditable', 'false');
+    timeSpan.textContent = timeString;
+    
+    // Insert at cursor
+    range.deleteContents();
+    range.insertNode(timeSpan);
+    
+    // Move cursor after the time
+    range.setStartAfter(timeSpan);
+    range.setEndAfter(timeSpan);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+    setActivePopover(null);
+    savedRangeRef.current = null;
+  }, [editor]);
+
+  // Handle text case transformation
+  const handleTextCase = useCallback((caseType: 'lowercase' | 'uppercase' | 'capitalize') => {
+    if (!editor?.container) return;
+    
+    // Restore the saved selection before transforming
+    if (savedRangeRef.current) {
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(savedRangeRef.current);
+      }
+    }
+    
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    
+    const range = selection.getRangeAt(0);
+    if (range.collapsed) return; // No text selected
+    
+    // Get selected text
+    const selectedText = range.toString();
+    if (!selectedText) return;
+    
+    // Check if already transformed
+    const container = range.commonAncestorContainer;
+    const parent = container.nodeType === Node.TEXT_NODE ? container.parentElement : container as HTMLElement;
+    const currentCase = parent?.getAttribute('data-text-case');
+    
+    // If clicking the same transformation, revert to original
+    if (currentCase === caseType) {
+      const originalText = parent?.getAttribute('data-original-text');
+      if (originalText) {
+        const textNode = document.createTextNode(originalText);
+        range.deleteContents();
+        range.insertNode(textNode);
+        parent?.removeAttribute('data-text-case');
+        parent?.removeAttribute('data-original-text');
+        setActivePopover(null);
+        savedRangeRef.current = null;
+        return;
+      }
+    }
+    
+    // Transform text
+    let transformedText = selectedText;
+    switch (caseType) {
+      case 'lowercase':
+        transformedText = selectedText.toLowerCase();
+        break;
+      case 'uppercase':
+        transformedText = selectedText.toUpperCase();
+        break;
+      case 'capitalize':
+        transformedText = selectedText
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+          .join(' ');
+        break;
+    }
+    
+    // Save original text for toggle behavior
+    if (!currentCase) {
+      parent?.setAttribute('data-original-text', selectedText);
+    }
+    parent?.setAttribute('data-text-case', caseType);
+    
+    // Replace text
+    const textNode = document.createTextNode(transformedText);
+    range.deleteContents();
+    range.insertNode(textNode);
+    
+    // Restore selection
+    range.selectNodeContents(textNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+    setActivePopover(null);
+    savedRangeRef.current = null;
+  }, [editor]);
+
+  // Handle date update from calendar
+  const handleUpdateDate = useCallback((newDate: Date) => {
+    if (!dateCalendar) return;
+    
+    const formatDate = (date: Date): string => {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      
+      const dayName = days[date.getDay()];
+      const day = date.getDate();
+      const monthName = months[date.getMonth()];
+      const year = date.getFullYear();
+      
+      return `${dayName}, ${day} ${monthName} ${year}`;
+    };
+    
+    const element = dateCalendar.element;
+    element.setAttribute('data-date', newDate.toISOString());
+    element.textContent = formatDate(newDate);
+    
+    setDateCalendar(null);
+  }, [dateCalendar]);
+
+  // Update time on hover picker
+  const handleUpdateTime = useCallback((hour: number, minute: number, period: 'AM' | 'PM', timezone: string) => {
+    if (!timePicker) return;
+    
+    const timeString = `${hour}:${minute.toString().padStart(2, '0')} ${period} ${timezone}`;
+    
+    const element = timePicker.element;
+    element.setAttribute('data-time', timeString);
+    element.setAttribute('data-hour', hour.toString());
+    element.setAttribute('data-minute', minute.toString());
+    element.setAttribute('data-period', period);
+    element.setAttribute('data-timezone', timezone);
+    element.textContent = timeString;
+    
+    setTimePicker(null);
+  }, [timePicker]);
+
   if (!editor) return null;
 
   // Helper to transform or insert block
@@ -511,6 +1042,21 @@ ${html}
           icon: Palette,
           label: 'Text Color',
           action: (e) => openPopover('textColor', e),
+        },
+        {
+          icon: CaseSensitive,
+          label: 'Text Case',
+          action: (e) => openPopover('textCase', e),
+        },
+        {
+          icon: Calendar,
+          label: 'Insert Date',
+          action: (e) => openPopover('date', e),
+        },
+        {
+          icon: Clock,
+          label: 'Insert Time',
+          action: (e) => openPopover('time', e),
         },
       ],
     },
@@ -620,6 +1166,11 @@ ${html}
           action: () => handleBlockAction('callout'),
         },
         {
+          icon: ChevronDown,
+          label: 'Accordion',
+          action: () => handleBlockAction('accordion'),
+        },
+        {
           icon: Minus,
           label: 'Divider',
           action: () => editor.insertBlock('divider'),
@@ -650,8 +1201,25 @@ ${html}
       role="toolbar"
       aria-label="Editor formatting options"
       onMouseDown={(e) => {
-        // Only prevent default if not clicking inside a popover input
-        if (!(e.target as HTMLElement).closest('.cb-popover')) {
+        const target = e.target as HTMLElement;
+        
+        // Save selection BEFORE anything else happens
+        // This captures the cursor position before the editor loses focus
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          // Only save if the selection is within the editor
+          if (editor?.container && editor.container.contains(range.commonAncestorContainer)) {
+            savedRangeRef.current = range.cloneRange();
+          }
+        }
+        
+        // Allow clicks on input and select elements to work normally
+        if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+          return;
+        }
+        // Only prevent default if not clicking inside a popover
+        if (!target.closest('.cb-popover')) {
           e.preventDefault();
         }
       }}
@@ -709,7 +1277,7 @@ ${html}
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleInsertLink();
-                    if (e.key === 'Escape') setActivePopover(null);
+                    if (e.key === 'Escape') handleClosePopover();
                   }}
                 />
                 <button
@@ -784,6 +1352,306 @@ ${html}
               </div>
             </div>
           )}
+
+          {/* Date Picker Popover */}
+          {activePopover === 'date' && (
+            <div className="cb-popover-content cb-date-popover">
+              <div className="cb-popover-header">
+                <span>Insert Date</span>
+                <button 
+                  type="button" 
+                  className="cb-popover-close"
+                  onClick={handleClosePopover}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="cb-popover-body">
+                <div className="cb-date-quick-options">
+                  <button
+                    type="button"
+                    className="cb-date-option-btn"
+                    onClick={() => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      handleInsertDate(today);
+                    }}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-date-option-btn"
+                    onClick={() => {
+                      const tomorrow = new Date();
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      tomorrow.setHours(0, 0, 0, 0);
+                      handleInsertDate(tomorrow);
+                    }}
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-date-option-btn"
+                    onClick={() => {
+                      const yesterday = new Date();
+                      yesterday.setDate(yesterday.getDate() - 1);
+                      yesterday.setHours(0, 0, 0, 0);
+                      handleInsertDate(yesterday);
+                    }}
+                  >
+                    Yesterday
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Time Picker Popover */}
+          {activePopover === 'time' && (
+            <div className="cb-popover-content cb-time-popover">
+              <div className="cb-popover-header">
+                <span>Set Time</span>
+                <button 
+                  type="button" 
+                  className="cb-popover-close"
+                  onClick={handleClosePopover}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="cb-popover-body">
+                <div className="cb-time-picker-compact">
+                  {/* Time Display - Compact Row with Now button */}
+                  <div className="cb-time-input-group-compact">
+                    {/* Hour Input */}
+                    <div className="cb-time-input-box-compact">
+                      <input
+                        type="text"
+                        maxLength={2}
+                        value={timePickerState.hour.toString().padStart(2, '0')}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          let num = parseInt(val, 10);
+                          if (val === '') {
+                            setTimePickerState({ ...timePickerState, hour: 12 });
+                          } else if (num >= 1 && num <= 12) {
+                            setTimePickerState({ ...timePickerState, hour: num });
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            const newHour = timePickerState.hour === 12 ? 1 : timePickerState.hour + 1;
+                            setTimePickerState({ ...timePickerState, hour: newHour });
+                          } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            const newHour = timePickerState.hour === 1 ? 12 : timePickerState.hour - 1;
+                            setTimePickerState({ ...timePickerState, hour: newHour });
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        className="cb-time-input-compact"
+                      />
+                      <div className="cb-time-arrows-compact">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newHour = timePickerState.hour === 12 ? 1 : timePickerState.hour + 1;
+                            setTimePickerState({ ...timePickerState, hour: newHour });
+                          }}
+                          className="cb-time-arrow-compact"
+                        >
+                          <ChevronUp size={10} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newHour = timePickerState.hour === 1 ? 12 : timePickerState.hour - 1;
+                            setTimePickerState({ ...timePickerState, hour: newHour });
+                          }}
+                          className="cb-time-arrow-compact"
+                        >
+                          <ChevronDownIcon size={10} />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <span className="cb-time-colon-compact">:</span>
+                    
+                    {/* Minute Input */}
+                    <div className="cb-time-input-box-compact">
+                      <input
+                        type="text"
+                        maxLength={2}
+                        value={timePickerState.minute.toString().padStart(2, '0')}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          let num = parseInt(val, 10);
+                          if (val === '') {
+                            setTimePickerState({ ...timePickerState, minute: 0 });
+                          } else if (num >= 0 && num <= 59) {
+                            setTimePickerState({ ...timePickerState, minute: num });
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            const newMinute = (timePickerState.minute + 1) % 60;
+                            setTimePickerState({ ...timePickerState, minute: newMinute });
+                          } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            const newMinute = (timePickerState.minute - 1 + 60) % 60;
+                            setTimePickerState({ ...timePickerState, minute: newMinute });
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        className="cb-time-input-compact"
+                      />
+                      <div className="cb-time-arrows-compact">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newMinute = (timePickerState.minute + 1) % 60;
+                            setTimePickerState({ ...timePickerState, minute: newMinute });
+                          }}
+                          className="cb-time-arrow-compact"
+                        >
+                          <ChevronUp size={10} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newMinute = (timePickerState.minute - 1 + 60) % 60;
+                            setTimePickerState({ ...timePickerState, minute: newMinute });
+                          }}
+                          className="cb-time-arrow-compact"
+                        >
+                          <ChevronDownIcon size={10} />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* AM/PM Toggle */}
+                    <button
+                      type="button"
+                      className="cb-time-period-compact"
+                      onClick={() => {
+                        setTimePickerState({
+                          ...timePickerState,
+                          period: timePickerState.period === 'AM' ? 'PM' : 'AM'
+                        });
+                      }}
+                    >
+                      {timePickerState.period}
+                    </button>
+                    
+                    {/* Now Button - Icon Only */}
+                    <button
+                      type="button"
+                      className="cb-time-now-icon-compact"
+                      onClick={() => {
+                        const now = new Date();
+                        let hour = now.getHours();
+                        const period = hour >= 12 ? 'PM' : 'AM';
+                        hour = hour % 12 || 12;
+                        const minute = now.getMinutes();
+                        setTimePickerState({ ...timePickerState, hour, minute, period });
+                      }}
+                      title="Set current time"
+                    >
+                      <Circle size={6} fill="currentColor" className="cb-pulse-dot" />
+                    </button>
+                  </div>
+                  
+                  {/* Timezone and Insert Button Row */}
+                  <div className="cb-time-bottom-row">
+                    <select
+                      className="cb-time-zone-compact"
+                      value={timePickerState.timezone}
+                      onChange={(e) => {
+                        setTimePickerState({ ...timePickerState, timezone: e.target.value });
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option value="IST">🇮🇳 IST - India</option>
+                      <option value="UTC">🌍 UTC - Universal</option>
+                      <option value="EST">🇺🇸 EST - Eastern</option>
+                      <option value="PST">🇺🇸 PST - Pacific</option>
+                      <option value="CST">🇺🇸 CST - Central</option>
+                      <option value="JST">🇯🇵 JST - Japan</option>
+                    </select>
+                    
+                    <button
+                      type="button"
+                      className="cb-time-insert-icon-compact"
+                      onClick={() => {
+                        handleInsertTime(
+                          timePickerState.hour,
+                          timePickerState.minute,
+                          timePickerState.period,
+                          timePickerState.timezone
+                        );
+                      }}
+                      title="Insert time"
+                    >
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Text Case Popover */}
+          {activePopover === 'textCase' && (
+            <div className="cb-popover-content cb-case-popover">
+              <div className="cb-popover-header">
+                <span>Text Case</span>
+                <button 
+                  type="button" 
+                  className="cb-popover-close"
+                  onClick={handleClosePopover}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="cb-popover-body">
+                <div className="cb-case-options">
+                  <button
+                    type="button"
+                    className="cb-case-option-btn"
+                    onClick={() => handleTextCase('lowercase')}
+                  >
+                    <span>abc</span>
+                    <span className="cb-case-label">lowercase</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-case-option-btn"
+                    onClick={() => handleTextCase('uppercase')}
+                  >
+                    <span>ABC</span>
+                    <span className="cb-case-label">UPPERCASE</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-case-option-btn"
+                    onClick={() => handleTextCase('capitalize')}
+                  >
+                    <span>Abc</span>
+                    <span className="cb-case-label">Capitalize</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -839,6 +1707,351 @@ ${html}
                 title="Remove link"
               >
                 <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Date Calendar Picker - rendered in portal */}
+      {dateCalendar && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={dateCalendarRef}
+          className={`cb-date-calendar ${darkMode ? 'cb-dark' : ''}`}
+          style={{
+            position: 'absolute',
+            left: dateCalendar.position.x,
+            top: dateCalendar.position.y,
+            zIndex: 10000,
+          }}
+          onMouseEnter={() => {
+            // Cancel close timeout when entering calendar
+            if (dateCloseTimeoutRef.current) {
+              window.clearTimeout(dateCloseTimeoutRef.current);
+              dateCloseTimeoutRef.current = null;
+            }
+          }}
+          onMouseLeave={() => {
+            // Close calendar when leaving
+            dateCloseTimeoutRef.current = window.setTimeout(() => {
+              setDateCalendar(null);
+            }, 200);
+          }}
+        >
+          <div className="cb-calendar-content">
+            <div className="cb-calendar-header">
+              <button
+                type="button"
+                className="cb-calendar-nav-btn"
+                onClick={() => {
+                  const newDate = new Date(dateCalendar.date);
+                  newDate.setMonth(newDate.getMonth() - 1);
+                  setDateCalendar({ ...dateCalendar, date: newDate });
+                }}
+              >
+                ‹
+              </button>
+              <div className="cb-calendar-month-year">
+                <span className="cb-calendar-month">
+                  {dateCalendar.date.toLocaleDateString('en-US', { month: 'long' })}
+                </span>
+                <select
+                  className="cb-calendar-year-select"
+                  value={dateCalendar.date.getFullYear()}
+                  onChange={(e) => {
+                    const newDate = new Date(dateCalendar.date);
+                    newDate.setFullYear(parseInt(e.target.value, 10));
+                    setDateCalendar({ ...dateCalendar, date: newDate });
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {(() => {
+                    const currentYear = new Date().getFullYear();
+                    const years: JSX.Element[] = [];
+                    for (let year = currentYear - 100; year <= currentYear + 100; year++) {
+                      years.push(
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      );
+                    }
+                    return years;
+                  })()}
+                </select>
+              </div>
+              <button
+                type="button"
+                className="cb-calendar-nav-btn"
+                onClick={() => {
+                  const newDate = new Date(dateCalendar.date);
+                  newDate.setMonth(newDate.getMonth() + 1);
+                  setDateCalendar({ ...dateCalendar, date: newDate });
+                }}
+              >
+                ›
+              </button>
+            </div>
+            
+            <div className="cb-calendar-grid">
+              <div className="cb-calendar-weekdays">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+                  <div key={i} className="cb-calendar-weekday">{day}</div>
+                ))}
+              </div>
+              
+              <div className="cb-calendar-days">
+                {(() => {
+                  const year = dateCalendar.date.getFullYear();
+                  const month = dateCalendar.date.getMonth();
+                  const firstDay = new Date(year, month, 1);
+                  const lastDay = new Date(year, month + 1, 0);
+                  const startingDayOfWeek = firstDay.getDay();
+                  const daysInMonth = lastDay.getDate();
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  
+                  const days: JSX.Element[] = [];
+                  
+                  // Empty cells for days before the first day of the month
+                  for (let i = 0; i < startingDayOfWeek; i++) {
+                    days.push(<div key={`empty-${i}`} className="cb-calendar-day-empty"></div>);
+                  }
+                  
+                  // Days of the month
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month, day);
+                    date.setHours(0, 0, 0, 0);
+                    const isToday = date.getTime() === today.getTime();
+                    const isSelected = date.getTime() === new Date(dateCalendar.date).setHours(0, 0, 0, 0);
+                    
+                    days.push(
+                      <button
+                        key={day}
+                        type="button"
+                        className={`cb-calendar-day ${isToday ? 'cb-calendar-day-today' : ''} ${isSelected ? 'cb-calendar-day-selected' : ''}`}
+                        onClick={() => handleUpdateDate(date)}
+                      >
+                        {day}
+                      </button>
+                    );
+                  }
+                  
+                  return days;
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      
+      {/* Time Picker on Hover - rendered in portal for proper positioning */}
+      {timePicker && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={timePickerRef}
+          className={`cb-time-picker-hover ${darkMode ? 'cb-dark' : ''}`}
+          style={{
+            position: 'absolute',
+            left: timePicker.position.x,
+            top: timePicker.position.y,
+            zIndex: 10000,
+          }}
+          onMouseEnter={() => {
+            if (timeCloseTimeoutRef.current) {
+              window.clearTimeout(timeCloseTimeoutRef.current);
+              timeCloseTimeoutRef.current = null;
+            }
+          }}
+          onMouseLeave={() => {
+            timeCloseTimeoutRef.current = window.setTimeout(() => {
+              setTimePicker(null);
+            }, 200);
+          }}
+        >
+          <div className="cb-time-picker-hover-content">
+            <div className="cb-time-hover-header">Edit Time</div>
+            
+            {/* Time Display - Compact with Now button */}
+            <div className="cb-time-input-group-compact">
+              {/* Hour */}
+              <div className="cb-time-input-box-compact">
+                <input
+                  type="text"
+                  maxLength={2}
+                  value={timePickerState.hour.toString().padStart(2, '0')}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    let num = parseInt(val, 10);
+                    if (val === '') {
+                      setTimePickerState({ ...timePickerState, hour: 12 });
+                    } else if (num >= 1 && num <= 12) {
+                      setTimePickerState({ ...timePickerState, hour: num });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      const newHour = timePickerState.hour === 12 ? 1 : timePickerState.hour + 1;
+                      setTimePickerState({ ...timePickerState, hour: newHour });
+                    } else if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      const newHour = timePickerState.hour === 1 ? 12 : timePickerState.hour - 1;
+                      setTimePickerState({ ...timePickerState, hour: newHour });
+                    }
+                  }}
+                  onFocus={(e) => e.target.select()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  className="cb-time-input-compact"
+                />
+                <div className="cb-time-arrows-compact">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newHour = timePickerState.hour === 12 ? 1 : timePickerState.hour + 1;
+                      setTimePickerState({ ...timePickerState, hour: newHour });
+                    }}
+                    className="cb-time-arrow-compact"
+                  >
+                    <ChevronUp size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newHour = timePickerState.hour === 1 ? 12 : timePickerState.hour - 1;
+                      setTimePickerState({ ...timePickerState, hour: newHour });
+                    }}
+                    className="cb-time-arrow-compact"
+                  >
+                    <ChevronDownIcon size={10} />
+                  </button>
+                </div>
+              </div>
+              
+              <span className="cb-time-colon-compact">:</span>
+              
+              {/* Minute */}
+              <div className="cb-time-input-box-compact">
+                <input
+                  type="text"
+                  maxLength={2}
+                  value={timePickerState.minute.toString().padStart(2, '0')}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    let num = parseInt(val, 10);
+                    if (val === '') {
+                      setTimePickerState({ ...timePickerState, minute: 0 });
+                    } else if (num >= 0 && num <= 59) {
+                      setTimePickerState({ ...timePickerState, minute: num });
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      const newMinute = (timePickerState.minute + 1) % 60;
+                      setTimePickerState({ ...timePickerState, minute: newMinute });
+                    } else if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      const newMinute = (timePickerState.minute - 1 + 60) % 60;
+                      setTimePickerState({ ...timePickerState, minute: newMinute });
+                    }
+                  }}
+                  onFocus={(e) => e.target.select()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  className="cb-time-input-compact"
+                />
+                <div className="cb-time-arrows-compact">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newMinute = (timePickerState.minute + 1) % 60;
+                      setTimePickerState({ ...timePickerState, minute: newMinute });
+                    }}
+                    className="cb-time-arrow-compact"
+                  >
+                    <ChevronUp size={10} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newMinute = (timePickerState.minute - 1 + 60) % 60;
+                      setTimePickerState({ ...timePickerState, minute: newMinute });
+                    }}
+                    className="cb-time-arrow-compact"
+                  >
+                    <ChevronDownIcon size={10} />
+                  </button>
+                </div>
+              </div>
+              
+              {/* AM/PM */}
+              <button
+                type="button"
+                className="cb-time-period-compact"
+                onClick={() => {
+                  setTimePickerState({
+                    ...timePickerState,
+                    period: timePickerState.period === 'AM' ? 'PM' : 'AM'
+                  });
+                }}
+              >
+                {timePickerState.period}
+              </button>
+              
+              {/* Now Button - Icon Only */}
+              <button
+                type="button"
+                className="cb-time-now-icon-compact"
+                onClick={() => {
+                  const now = new Date();
+                  let hour = now.getHours();
+                  const period = hour >= 12 ? 'PM' : 'AM';
+                  hour = hour % 12 || 12;
+                  const minute = now.getMinutes();
+                  setTimePickerState({ ...timePickerState, hour, minute, period });
+                }}
+                title="Set current time"
+              >
+                <Circle size={6} fill="currentColor" className="cb-pulse-dot" />
+              </button>
+            </div>
+            
+            {/* Timezone and Update Button Row */}
+            <div className="cb-time-bottom-row">
+              <select
+                className="cb-time-zone-compact"
+                value={timePickerState.timezone}
+                onChange={(e) => {
+                  setTimePickerState({ ...timePickerState, timezone: e.target.value });
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <option value="IST">🇮🇳 IST - India</option>
+                <option value="UTC">🌍 UTC - Universal</option>
+                <option value="EST">🇺🇸 EST - Eastern</option>
+                <option value="PST">🇺🇸 PST - Pacific</option>
+                <option value="CST">🇺🇸 CST - Central</option>
+                <option value="JST">🇯🇵 JST - Japan</option>
+              </select>
+              
+              <button
+                type="button"
+                className="cb-time-insert-icon-compact"
+                onClick={() => {
+                  handleUpdateTime(
+                    timePickerState.hour,
+                    timePickerState.minute,
+                    timePickerState.period,
+                    timePickerState.timezone
+                  );
+                }}
+                title="Update time"
+              >
+                <ArrowRight size={16} />
               </button>
             </div>
           </div>

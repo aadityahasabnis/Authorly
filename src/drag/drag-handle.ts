@@ -7,6 +7,7 @@ import { getBlockFromChild } from '../utils/helpers';
 export interface DragState {
   isDragging: boolean;
   draggedElement: HTMLElement | null;
+  draggedElements: HTMLElement[]; // For group dragging
   placeholder: HTMLElement | null;
   startY: number;
   currentY: number;
@@ -20,6 +21,7 @@ export interface DragDropOptions {
   onDragMove?: (element: HTMLElement, targetElement: HTMLElement | null, position: 'before' | 'after') => void;
   onDragEnd?: (element: HTMLElement, newIndex: number) => void;
   onDragCancel?: () => void;
+  getSelectedBlocks?: () => HTMLElement[]; // Get currently selected blocks for group drag
 }
 
 const SCROLL_THRESHOLD = 50;
@@ -34,23 +36,35 @@ export function initDragDrop(options: DragDropOptions) {
   let state: DragState = {
     isDragging: false,
     draggedElement: null,
+    draggedElements: [],
     placeholder: null,
     startY: 0,
     currentY: 0,
     scrollInterval: null,
   };
 
-  // Create placeholder element
+  // Create placeholder element - ALWAYS a thin 4px blue line
   function createPlaceholder(): HTMLElement {
     const placeholder = document.createElement('div');
     placeholder.className = 'cb-drag-placeholder';
-    placeholder.style.cssText = `
-      height: 4px;
-      background: var(--cb-primary, #3b82f6);
-      border-radius: 2px;
-      margin: 4px 0;
-      transition: opacity 0.2s;
-    `;
+    // Force inline styles with !important to override any CSS
+    placeholder.style.height = '4px';
+    placeholder.style.minHeight = '4px';
+    placeholder.style.maxHeight = '4px';
+    placeholder.style.lineHeight = '4px';
+    placeholder.style.fontSize = '0';
+    placeholder.style.overflow = 'hidden';
+    placeholder.style.display = 'block';
+    placeholder.style.background = 'var(--cb-primary, #3b82f6)';
+    placeholder.style.borderRadius = '2px';
+    placeholder.style.margin = '4px 0';
+    placeholder.style.padding = '0';
+    placeholder.style.border = 'none';
+    placeholder.style.transition = 'opacity 0.2s';
+    placeholder.style.pointerEvents = 'none';
+    placeholder.style.flex = 'none';
+    placeholder.style.flexShrink = '0';
+    placeholder.style.flexGrow = '0';
     return placeholder;
   }
 
@@ -61,7 +75,10 @@ export function initDragDrop(options: DragDropOptions) {
 
   // Find drop target
   function findDropTarget(y: number): { element: HTMLElement | null; position: 'before' | 'after' } {
-    const blocks = getBlocks().filter(b => b !== state.draggedElement);
+    // Exclude dragged elements from potential drop targets
+    const blocks = getBlocks().filter(b => 
+      !state.draggedElements.includes(b) && b !== state.draggedElement
+    );
     
     for (const block of blocks) {
       const rect = block.getBoundingClientRect();
@@ -116,28 +133,64 @@ export function initDragDrop(options: DragDropOptions) {
     
     if (!handle) return;
 
+    // Allow Shift+Click through for multi-selection (don't start drag)
+    if ('shiftKey' in e && e.shiftKey) {
+      return;
+    }
+
     const block = getBlockFromChild(handle);
     if (!block) return;
 
     e.preventDefault();
     
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    // Check if dragging a selected block (for group drag)
+    const selectedBlocks = options.getSelectedBlocks?.() || [];
+    const blockId = block.getAttribute('data-block-id');
+    const isDraggingSelectedBlock = selectedBlocks.some(b => 
+      b.getAttribute('data-block-id') === blockId
+    );
+    
+    let draggedElements: HTMLElement[] = [];
+    
+    if (isDraggingSelectedBlock && selectedBlocks.length > 1) {
+      // Group drag: drag all selected blocks together
+      console.log('🎯 Group drag: dragging', selectedBlocks.length, 'selected blocks');
+      
+      // Sort selected blocks by their DOM order to maintain sequence
+      const allBlocks = getBlocks();
+      draggedElements = selectedBlocks.sort((a, b) => {
+        return allBlocks.indexOf(a) - allBlocks.indexOf(b);
+      });
+      
+      console.log('📋 Blocks to drag in order:', draggedElements.map(el => el.getAttribute('data-block-id')));
+    } else {
+      // Single block drag
+      draggedElements = [block];
+      console.log('📦 Single block drag:', blockId);
+    }
 
     state = {
       ...state,
       isDragging: true,
       draggedElement: block,
+      draggedElements,
       placeholder: createPlaceholder(),
       startY: clientY,
       currentY: clientY,
     };
 
-    // Style dragged element
-    block.style.opacity = '0.5';
-    block.style.pointerEvents = 'none';
+    // Style all dragged elements
+    draggedElements.forEach((el, idx) => {
+      el.style.opacity = '0.5';
+      el.style.pointerEvents = 'none';
+      console.log(`  ${idx + 1}. Styling block:`, el.getAttribute('data-block-id'));
+    });
     
-    // Add placeholder
-    block.parentNode?.insertBefore(state.placeholder!, block.nextSibling);
+    // Add placeholder after the last dragged element
+    const lastElement = draggedElements[draggedElements.length - 1];
+    lastElement.parentNode?.insertBefore(state.placeholder!, lastElement.nextSibling);
     
     // Add document listeners
     document.addEventListener('mousemove', handleDragMove);
@@ -174,24 +227,97 @@ export function initDragDrop(options: DragDropOptions) {
       return;
     }
 
-    const { element, position } = findDropTarget(state.currentY);
+    console.log('🎯 Drag end - analyzing drop position');
+    console.log('  Blocks to move:', state.draggedElements.map(el => el.getAttribute('data-block-id')));
 
-    // Move element to new position
-    if (element && state.placeholder?.parentNode) {
-      state.placeholder.parentNode.insertBefore(
-        state.draggedElement,
-        state.placeholder
-      );
+    // Check if we're doing a group drag
+    const isGroupDrag = state.draggedElements.length > 1;
+    
+    if (isGroupDrag && state.placeholder?.parentNode) {
+      // For group drag, check if placeholder would split selected blocks
+      // Get ALL children (including placeholder) - not just blocks with data-block-id
+      const allChildren = Array.from(state.placeholder.parentNode.children) as HTMLElement[];
+      
+      // Find where the placeholder is in ALL children
+      const placeholderIndex = allChildren.indexOf(state.placeholder);
+      
+      console.log('  📍 Placeholder at index:', placeholderIndex, 'of', allChildren.length, 'children');
+      
+      // Get the elements immediately before and after the placeholder
+      const beforeElement = allChildren[placeholderIndex - 1];
+      const afterElement = allChildren[placeholderIndex + 1]; // Skip placeholder itself
+      
+      // Check if BOTH neighbors are in the dragged selection
+      // This detects if we're trying to split a contiguous group
+      const beforeIsDragged = beforeElement && state.draggedElements.includes(beforeElement);
+      const afterIsDragged = afterElement && state.draggedElements.includes(afterElement);
+      
+      console.log('  📊 Before placeholder:', beforeElement?.getAttribute('data-block-id'), 'isDragged:', beforeIsDragged);
+      console.log('  📊 After placeholder:', afterElement?.getAttribute('data-block-id'), 'isDragged:', afterIsDragged);
+      
+      if (beforeIsDragged && afterIsDragged) {
+        console.log('  ⚠️ Cannot split selected blocks - canceling drag');
+        
+        // Reset styles without moving
+        state.draggedElements.forEach(el => {
+          el.style.opacity = '';
+          el.style.pointerEvents = '';
+        });
+        
+        // Remove placeholder
+        if (state.placeholder) {
+          state.placeholder.remove();
+          state.placeholder = null;
+        }
+        
+        cleanup();
+        return; // Don't move blocks or save to history
+      }
+      
+      console.log('  ✅ Valid drop position - moving all blocks');
+    }
+
+    // Move all dragged elements to new position as a group
+    if (state.placeholder?.parentNode) {
+      const placeholderParent = state.placeholder.parentNode;
+      
+      console.log('  Inserting blocks before placeholder...');
+      
+      // Create a document fragment to hold all blocks in order
+      const fragment = document.createDocumentFragment();
+      
+      // Add all dragged elements to the fragment in the correct order
+      state.draggedElements.forEach((draggedEl, idx) => {
+        fragment.appendChild(draggedEl);
+        console.log(`    ${idx + 1}. Added to fragment:`, draggedEl.getAttribute('data-block-id'));
+      });
+      
+      // Insert the entire fragment at once before the placeholder
+      // This maintains the order and inserts all blocks together
+      placeholderParent.insertBefore(fragment, state.placeholder);
+      
+      console.log('✅ All blocks moved successfully (maintaining order)');
     }
 
     // Calculate new index
     const blocks = getBlocks();
     const newIndex = blocks.indexOf(state.draggedElement);
+    console.log('📍 New index:', newIndex);
 
-    // Reset styles
-    state.draggedElement.style.opacity = '';
-    state.draggedElement.style.pointerEvents = '';
+    // Reset styles for all dragged elements
+    state.draggedElements.forEach(el => {
+      el.style.opacity = '';
+      el.style.pointerEvents = '';
+    });
 
+    // CRITICAL: Remove placeholder BEFORE calling onDragEnd
+    // Otherwise the placeholder gets saved to undo/redo history!
+    if (state.placeholder) {
+      state.placeholder.remove();
+      state.placeholder = null;
+    }
+
+    // Now safe to save history (placeholder is gone from DOM)
     options.onDragEnd?.(state.draggedElement, newIndex);
 
     cleanup();
@@ -217,6 +343,7 @@ export function initDragDrop(options: DragDropOptions) {
     state = {
       isDragging: false,
       draggedElement: null,
+      draggedElements: [],
       placeholder: null,
       startY: 0,
       currentY: 0,

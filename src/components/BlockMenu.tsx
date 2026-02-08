@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Table,
   Link,
+  Calendar,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -31,6 +32,7 @@ interface BlockMenuItem {
   icon: LucideIcon;
   keywords: string[];
   data?: Record<string, any>; // Additional data to pass when creating block
+  inline?: boolean; // If true, insert inline in current block instead of creating new block
 }
 
 const BLOCK_MENU_ITEMS: BlockMenuItem[] = [
@@ -136,6 +138,14 @@ const BLOCK_MENU_ITEMS: BlockMenuItem[] = [
     keywords: ['accordion', 'collapse', 'toggle', 'details'],
   },
   {
+    type: 'date',
+    label: 'Date',
+    description: 'Insert formatted date',
+    icon: Calendar,
+    keywords: ['date', 'time', 'calendar', 'today'],
+    inline: true, // Insert inline, not as a block
+  },
+  {
     type: 'table',
     label: 'Table',
     description: 'Add a table',
@@ -228,7 +238,7 @@ export const BlockMenu: React.FC<BlockMenuProps> = ({
           e.preventDefault();
           if (filteredItems[selectedIndex]) {
             const item = filteredItems[selectedIndex];
-            onSelect(item.type, item.data);
+            onSelect(item.type, item.data, item.inline);
           }
           break;
         case 'Escape':
@@ -287,7 +297,7 @@ export const BlockMenu: React.FC<BlockMenuProps> = ({
               className={`cb-block-menu-item ${
                 index === selectedIndex ? 'cb-block-menu-item-selected' : ''
               }`}
-              onClick={() => onSelect(item.type, item.data)}
+              onClick={() => onSelect(item.type, item.data, item.inline)}
               onMouseEnter={() => setSelectedIndex(index)}
               role="option"
               aria-selected={index === selectedIndex}

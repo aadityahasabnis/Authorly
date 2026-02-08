@@ -117,6 +117,29 @@ export function toggleInlineCode(container: HTMLElement): void {
  * Insert or edit link - properly handles formatted text
  */
 export function insertLink(container: HTMLElement, url: string, text?: string): void {
+  // MEDIUM-PRIORITY FIX (Bug #9): Add URL validation to prevent invalid links
+  // Ensures URL has valid protocol or adds https:// as default
+  if (!url || typeof url !== 'string') {
+    console.warn('insertLink: Invalid URL provided');
+    return;
+  }
+
+  // Trim whitespace
+  url = url.trim();
+  
+  if (!url) {
+    console.warn('insertLink: Empty URL provided');
+    return;
+  }
+
+  // MEDIUM-PRIORITY FIX (Bug #9): Add protocol if missing
+  // Valid protocols: http, https, mailto, tel, ftp
+  const hasProtocol = /^[a-z][a-z0-9+.-]*:/i.test(url);
+  if (!hasProtocol) {
+    // Auto-add https:// for URLs without protocol
+    url = 'https://' + url;
+  }
+
   const selection = window.getSelection();
   if (!selection || !selection.rangeCount) return;
 

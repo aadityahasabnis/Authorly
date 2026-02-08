@@ -35,6 +35,7 @@ export { videoBlock, setVideoSrc, getEmbedUrl } from './video';
 export { dividerBlock, setDividerStyle } from './divider';
 export { calloutBlock, setCalloutType, addCalloutTitle } from './callout';
 export { accordionBlock, toggleAccordion, setAccordionOpen } from './accordion';
+export { dateBlock, formatDate, parseDate, getToday, getTomorrow, getYesterday, setDate } from './date';
 export {
   tableBlock,
   addTableRow,
@@ -65,6 +66,7 @@ import { videoBlock } from './video';
 import { dividerBlock } from './divider';
 import { calloutBlock } from './callout';
 import { accordionBlock } from './accordion';
+import { dateBlock } from './date';
 import { tableBlock } from './table';
 import { linkPreviewBlock } from './linkPreview';
 
@@ -91,6 +93,7 @@ export const allBlocks: BlockDefinition[] = [
   dividerBlock,
   calloutBlock,
   accordionBlock,
+  dateBlock,
   tableBlock,
   linkPreviewBlock,
 ];

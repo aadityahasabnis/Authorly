@@ -84,10 +84,25 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const initialContentLoadedRef = useRef(false); // Track if initial content was loaded
-  const undoStackRef = useRef<string[]>([]); // Ref for undo stack to avoid stale closures
-  const redoStackRef = useRef<string[]>([]); // Ref for redo stack to avoid stale closures
+  const saveToHistoryImmediateRef = useRef<(() => void) | null>(null); // Ref for history save function
+  
+  // Enhanced history with cursor position tracking
+  interface HistoryEntry {
+    html: string;
+    cursorPosition: {
+      blockId: string | null;
+      offset: number;
+      isCollapsed: boolean;
+    } | null;
+    selectedBlockIds: string[]; // Track multi-block selection
+  }
+  
+  const undoStackRef = useRef<HistoryEntry[]>([]); // Enhanced undo stack
+  const redoStackRef = useRef<HistoryEntry[]>([]); // Enhanced redo stack
+  const selectedBlockIdsRef = useRef<Set<string>>(new Set()); // Ref for current selection (avoids closure issues)
   const [isMounted, setIsMounted] = useState(false); // Track mount state for toolbar
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [selectedBlockIds, setSelectedBlockIds] = useState<Set<string>>(new Set()); // Multi-block selection
   const [showBlockMenu, setShowBlockMenu] = useState(false);
   const [blockMenuPosition, setBlockMenuPosition] = useState({ x: 0, y: 0 });
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
@@ -115,19 +130,76 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     setIsMounted(true);
   }, []);
 
-  // Track selection changes to update toolbar active states
+  // Sync selectedBlockIds ref with state (for drag-drop without re-init)
   useEffect(() => {
+    selectedBlockIdsRef.current = selectedBlockIds;
+  }, [selectedBlockIds]);
+
+  // Track selection changes to update toolbar active states
+  // HIGH-PRIORITY FIX (Bug #13): Use RAF throttling to prevent excessive re-renders during text selection
+  useEffect(() => {
+    let rafId: number | null = null;
+    let lastUpdateTime = 0;
+    const MIN_UPDATE_INTERVAL = 100; // Minimum 100ms between updates (10 FPS max)
+    
     const handleSelectionChange = () => {
-      // Only update if selection is within our editor
-      const selection = window.getSelection();
-      if (selection && contentRef.current?.contains(selection.anchorNode)) {
-        setSelectionVersion(v => v + 1);
+      // Throttle using RAF + time-based check for better performance
+      if (rafId) return; // Already scheduled
+      
+      const now = Date.now();
+      const timeSinceLastUpdate = now - lastUpdateTime;
+      
+      if (timeSinceLastUpdate < MIN_UPDATE_INTERVAL) {
+        // Schedule for later if updating too frequently
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          setTimeout(() => {
+            lastUpdateTime = Date.now();
+            // Only update if selection is within our editor
+            const selection = window.getSelection();
+            if (selection && contentRef.current?.contains(selection.anchorNode)) {
+              setSelectionVersion(v => v + 1);
+            }
+          }, MIN_UPDATE_INTERVAL - timeSinceLastUpdate);
+        });
+      } else {
+        // Update immediately if enough time has passed
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          lastUpdateTime = Date.now();
+          // Only update if selection is within our editor
+          const selection = window.getSelection();
+          if (selection && contentRef.current?.contains(selection.anchorNode)) {
+            setSelectionVersion(v => v + 1);
+          }
+        });
       }
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, []);
+
+  // Add visual feedback for selected blocks
+  useEffect(() => {
+    if (!contentRef.current) return;
+    
+    // Remove all selection classes
+    contentRef.current.querySelectorAll('.cb-block').forEach(block => {
+      block.classList.remove('cb-block-selected');
+    });
+    
+    // Add selection class to selected blocks
+    selectedBlockIds.forEach(blockId => {
+      const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
+      if (block) {
+        block.classList.add('cb-block-selected');
+      }
+    });
+  }, [selectedBlockIds]);
 
   // Create a block element with controls
   const createBlockWithControls = useCallback((type: BlockType, data?: Partial<BlockData>): HTMLElement => {
@@ -228,18 +300,42 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
     updateState();
     
+    // Save initial state to history (after a small delay to ensure everything is loaded)
+    setTimeout(() => {
+      if (saveToHistoryImmediateRef.current) {
+        saveToHistoryImmediateRef.current();
+      }
+    }, 100);
+    
     // Initialize drag and drop
     if (!readOnly && contentRef.current) {
       initDragDrop({
         container: contentRef.current,
         handleSelector: '[data-drag-handle]',
+        getSelectedBlocks: () => {
+          // Use ref instead of closure to get current selection
+          // This avoids re-initializing drag system on every selection change
+          if (!contentRef.current) return [];
+          const allBlocks = Array.from(contentRef.current.querySelectorAll('.cb-block')) as HTMLElement[];
+          return allBlocks.filter(block => {
+            const blockId = block.getAttribute('data-block-id');
+            return blockId && selectedBlockIdsRef.current.has(blockId);
+          });
+        },
         onDragEnd: () => {
+          // DON'T clear selection - keep blocks selected after drag
+          // The user may want to drag again or perform other operations
+          
+          // Save to history immediately after reordering blocks
+          if (saveToHistoryImmediateRef.current) {
+            saveToHistoryImmediateRef.current();
+          }
           updateState();
           emitChange();
         },
       });
     }
-  }, [readOnly]);
+  }, [readOnly]); // Only re-init when readOnly changes, not on every selection change
 
   // Auto focus
   useEffect(() => {
@@ -297,6 +393,10 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const extractBlockData = (element: HTMLElement, type: BlockType): Partial<BlockData> => {
     const data: any = { type };
     
+    // CRITICAL FIX (Bug #17): Never preserve data-block-id from pasted content
+    // Always generate fresh IDs to prevent duplicates
+    // The 'id' field will be auto-generated by createBlockWithControls
+    
     switch (type) {
       case 'heading':
         const level = parseInt(element.tagName.charAt(1)) || 2;
@@ -312,7 +412,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         const items: any[] = [];
         element.querySelectorAll(':scope > li').forEach(li => {
           items.push({
-            id: generateId(),
+            id: generateId(), // Fresh ID for each list item
             content: li.innerHTML,
             checked: li.querySelector('input[type="checkbox"]')?.hasAttribute('checked'),
           });
@@ -362,8 +462,28 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         break;
     }
     
+    // CRITICAL FIX (Bug #17): Explicitly exclude any data-block-id that might have been in the element
+    // This ensures we never copy IDs from pasted content
     return data;
   };
+
+  /**
+   * Get full editor state HTML (internal use for undo/redo)
+   * Includes block IDs and structure
+   */
+  const getEditorStateHTML = useCallback((): string => {
+    if (!contentRef.current) return '';
+    return contentRef.current.innerHTML;
+  }, []);
+  
+  /**
+   * Set full editor state HTML (internal use for undo/redo)
+   * Preserves block IDs and structure
+   */
+  const setEditorStateHTML = useCallback((html: string): void => {
+    if (!contentRef.current) return;
+    contentRef.current.innerHTML = html;
+  }, []);
 
   // Get clean HTML output (no editor artifacts)
   const getHTML = useCallback((): string => {
@@ -485,26 +605,382 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     [onChange, getHTML]
   );
 
-  const saveToHistory = useCallback(() => {
-    const currentHTML = getHTML();
-    undoStackRef.current = [...undoStackRef.current.slice(-49), currentHTML];
-    redoStackRef.current = [];
+  /**
+   * Get clean HTML from selected blocks/content
+   * Removes ALL editor UI elements (controls, buttons, drag handles, icons)
+   * Preserves only semantic HTML and block structure
+   * Handles both multi-block and inline text selection
+   */
+  const getCleanSelectionHTML = useCallback((): string => {
+    if (!contentRef.current) return '';
+    
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return '';
+    
+    // Check if we have multi-block selection (entire blocks selected)
+    if (selectedBlockIds.size > 0) {
+      // Multi-block selection - extract clean HTML for each selected block
+      let cleanHTML = '';
+      const allBlocks = Array.from(contentRef.current.querySelectorAll('.cb-block'));
+      
+      allBlocks.forEach(wrapper => {
+        const blockId = wrapper.getAttribute('data-block-id');
+        if (!blockId || !selectedBlockIds.has(blockId)) return;
+        
+        const blockType = wrapper.getAttribute('data-block-type');
+        const contentWrapper = wrapper.querySelector('.cb-block-content');
+        
+        if (!contentWrapper) return;
+        
+        const blockElement = contentWrapper.firstElementChild as HTMLElement;
+        if (!blockElement) return;
+        
+        // Clone the block element
+        const clone = blockElement.cloneNode(true) as HTMLElement;
+        
+        // Remove ALL editor UI elements
+        clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
+        
+        // Remove editor-specific attributes
+        clone.removeAttribute('data-placeholder');
+        clone.removeAttribute('contenteditable');
+        clone.removeAttribute('data-block-id');
+        clone.removeAttribute('data-block-type');
+        clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
+        clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+        clone.querySelectorAll('[data-block-id]').forEach(el => el.removeAttribute('data-block-id'));
+        clone.querySelectorAll('[data-block-type]').forEach(el => el.removeAttribute('data-block-type'));
+        
+        // Clean up inline styles that are editor-specific
+        clone.querySelectorAll('[style]').forEach(el => {
+          const element = el as HTMLElement;
+          // Keep width/height for images, remove editor positioning
+          if (!element.tagName.match(/^(IMG|VIDEO|IFRAME)$/i)) {
+            element.removeAttribute('style');
+          }
+        });
+        
+        // Handle specific block types for clean output
+        switch (blockType) {
+          case 'code':
+            const codeEl = clone.querySelector('code');
+            const preEl = clone.querySelector('pre');
+            if (codeEl && preEl) {
+              const lang = clone.getAttribute('data-language') || 'plaintext';
+              cleanHTML += `<pre data-language="${lang}"><code>${codeEl.textContent}</code></pre>\n`;
+            } else {
+              cleanHTML += clone.outerHTML + '\n';
+            }
+            break;
+          case 'divider':
+            cleanHTML += '<hr>\n';
+            break;
+          case 'image':
+            const img = clone.querySelector('img');
+            const caption = clone.querySelector('figcaption');
+            if (img) {
+              cleanHTML += '<figure>';
+              cleanHTML += `<img src="${img.src}" alt="${img.alt || ''}" />`;
+              if (caption && caption.textContent?.trim()) {
+                cleanHTML += `<figcaption>${caption.textContent}</figcaption>`;
+              }
+              cleanHTML += '</figure>\n';
+            }
+            break;
+          default:
+            cleanHTML += clone.outerHTML + '\n';
+        }
+      });
+      
+      return cleanHTML.trim();
+    }
+    
+    // Inline text selection or partial block selection
+    const range = selection.getRangeAt(0);
+    const container = range.cloneContents();
+    const tempDiv = document.createElement('div');
+    tempDiv.appendChild(container);
+    
+    // Find all selected blocks (partial or full)
+    const blocks = tempDiv.querySelectorAll('.cb-block');
+    
+    if (blocks.length === 0) {
+      // No full blocks selected - just inline content
+      const clone = tempDiv.cloneNode(true) as HTMLElement;
+      
+      // Remove ALL editor-specific elements
+      clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
+      
+      // Remove editor-specific attributes
+      clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
+      clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+      clone.querySelectorAll('[data-block-id]').forEach(el => el.removeAttribute('data-block-id'));
+      clone.querySelectorAll('[data-block-type]').forEach(el => el.removeAttribute('data-block-type'));
+      
+      return clone.innerHTML.trim();
+    }
+    
+    // Full blocks are selected via range selection - extract clean semantic HTML
+    let cleanHTML = '';
+    
+    blocks.forEach(wrapper => {
+      const blockType = wrapper.getAttribute('data-block-type');
+      const contentWrapper = wrapper.querySelector('.cb-block-content');
+      
+      if (!contentWrapper) return;
+      
+      const blockElement = contentWrapper.firstElementChild as HTMLElement;
+      if (!blockElement) return;
+      
+      // Clone and clean the block
+      const clone = blockElement.cloneNode(true) as HTMLElement;
+      
+      // Remove ALL editor-specific elements
+      clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
+      
+      // Remove editor-specific attributes
+      clone.removeAttribute('data-placeholder');
+      clone.removeAttribute('contenteditable');
+      clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
+      clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
+      
+      // Clean up inline styles that are editor-specific
+      clone.querySelectorAll('[style]').forEach(el => {
+        const element = el as HTMLElement;
+        if (!element.tagName.match(/^(IMG|VIDEO|IFRAME)$/i)) {
+          element.removeAttribute('style');
+        }
+      });
+      
+      // Handle specific block types
+      switch (blockType) {
+        case 'code':
+          const codeEl = clone.querySelector('code');
+          const preEl = clone.querySelector('pre');
+          if (codeEl && preEl) {
+            const lang = clone.getAttribute('data-language') || 'plaintext';
+            cleanHTML += `<pre data-language="${lang}"><code>${codeEl.textContent}</code></pre>\n`;
+          } else {
+            cleanHTML += clone.outerHTML + '\n';
+          }
+          break;
+        case 'divider':
+          cleanHTML += '<hr>\n';
+          break;
+        case 'image':
+          const img = clone.querySelector('img');
+          const caption = clone.querySelector('figcaption');
+          if (img) {
+            cleanHTML += '<figure>';
+            cleanHTML += `<img src="${img.src}" alt="${img.alt || ''}" />`;
+            if (caption && caption.textContent?.trim()) {
+              cleanHTML += `<figcaption>${caption.textContent}</figcaption>`;
+            }
+            cleanHTML += '</figure>\n';
+          }
+          break;
+        default:
+          cleanHTML += clone.outerHTML + '\n';
+      }
+    });
+    
+    return cleanHTML.trim();
+  }, [selectedBlockIds]);
+
+  /**
+   * Capture current cursor position for undo/redo
+   * Returns block ID and offset within that block
+   */
+  const captureCursorPosition = useCallback((): {
+    blockId: string | null;
+    offset: number;
+    isCollapsed: boolean;
+  } | null => {
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return null;
+    
+    const range = selection.getRangeAt(0);
+    
+    // Find the block containing the cursor
+    let node = range.startContainer;
+    
+    // Walk up to find the block
+    while (node && node !== contentRef.current) {
+      if (node instanceof HTMLElement && node.classList?.contains('cb-block')) {
+        const blockId = node.getAttribute('data-block-id');
+        
+        // Get the editable element within this block
+        const editableElement = node.querySelector('[contenteditable="true"]') as HTMLElement;
+        if (!editableElement) return { blockId, offset: 0, isCollapsed: selection.isCollapsed };
+        
+        // Calculate offset within the editable element
+        let offset = 0;
+        try {
+          const preRange = document.createRange();
+          preRange.selectNodeContents(editableElement);
+          preRange.setEnd(range.startContainer, range.startOffset);
+          offset = preRange.toString().length;
+        } catch (e) {
+          offset = 0;
+        }
+        
+        return { blockId, offset, isCollapsed: selection.isCollapsed };
+      }
+      node = node.parentNode as Node;
+    }
+    
+    return null;
+  }, []);
+
+  /**
+   * Restore cursor position after undo/redo
+   * Places cursor back where it was
+   */
+  const restoreCursorPosition = useCallback((position: {
+    blockId: string | null;
+    offset: number;
+    isCollapsed: boolean;
+  } | null): void => {
+    if (!position || !position.blockId || !contentRef.current) return;
+    
+    // Find the block
+    const block = contentRef.current.querySelector(`[data-block-id="${position.blockId}"]`);
+    if (!block) {
+      // Block doesn't exist anymore - focus first available block
+      const firstBlock = contentRef.current.querySelector('.cb-block [contenteditable="true"]') as HTMLElement;
+      if (firstBlock) {
+        firstBlock.focus();
+      }
+      return;
+    }
+    
+    // Find the editable element
+    const editableElement = block.querySelector('[contenteditable="true"]') as HTMLElement;
+    if (!editableElement) return;
+    
+    // Restore cursor position within the element
+    try {
+      const range = document.createRange();
+      const selection = window.getSelection();
+      if (!selection) return;
+      
+      // Walk through text nodes to find the offset
+      const walker = document.createTreeWalker(
+        editableElement,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+      
+      let currentOffset = 0;
+      let found = false;
+      let node: Node | null = walker.nextNode();
+      
+      while (node) {
+        const nodeLength = node.textContent?.length || 0;
+        
+        if (currentOffset + nodeLength >= position.offset) {
+          // Found the node containing our offset
+          const localOffset = position.offset - currentOffset;
+          range.setStart(node, Math.min(localOffset, nodeLength));
+          range.setEnd(node, Math.min(localOffset, nodeLength));
+          found = true;
+          break;
+        }
+        
+        currentOffset += nodeLength;
+        node = walker.nextNode();
+      }
+      
+      if (!found) {
+        // Offset not found - place cursor at end
+        range.selectNodeContents(editableElement);
+        range.collapse(false);
+      }
+      
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      // Focus the element
+      editableElement.focus();
+    } catch (e) {
+      // Fallback: just focus the element
+      editableElement.focus();
+    }
+  }, []);
+
+  // Save to history - IMMEDIATE (for structural changes like add/delete block)
+  const saveToHistoryImmediate = useCallback(() => {
+    const currentHTML = getEditorStateHTML(); // Use editor state instead of clean HTML
+    const cursorPosition = captureCursorPosition();
+    
+    // Don't save if nothing changed
+    const lastEntry = undoStackRef.current[undoStackRef.current.length - 1];
+    if (lastEntry && lastEntry.html === currentHTML) {
+      return;
+    }
+    
+    const historyEntry: HistoryEntry = {
+      html: currentHTML,
+      cursorPosition,
+      selectedBlockIds: Array.from(selectedBlockIds), // Save current selection
+    };
+    
+    // CRITICAL FIX (Bug #16): Limit both undo AND redo stacks to prevent memory leak
+    // Keep last 50 entries in each stack
+    undoStackRef.current = [...undoStackRef.current.slice(-49), historyEntry];
+    redoStackRef.current = []; // Clear redo stack on new action
+    
     setEditorState(prev => ({
       ...prev,
       undoStack: undoStackRef.current,
       redoStack: [],
       isDirty: true,
     }));
-  }, [getHTML]);
+  }, [getEditorStateHTML, captureCursorPosition, selectedBlockIds]);
+  
+  // Store the function in ref for early access
+  saveToHistoryImmediateRef.current = saveToHistoryImmediate;
+
+  // Debounced history save (for typing/content changes)
+  const debouncedSaveToHistory = useMemo(
+    () => debounce(() => {
+      saveToHistoryImmediate();
+    }, 1000), // Save 1 second after user stops typing
+    [saveToHistoryImmediate]
+  );
+  
+  // Main saveToHistory function (uses debounced version)
+  const saveToHistory = useCallback(() => {
+    debouncedSaveToHistory();
+  }, [debouncedSaveToHistory]);
 
   const handleUndo = useCallback(() => {
-    if (undoStackRef.current.length === 0) return;
+    if (undoStackRef.current.length === 0) {
+      console.log('🔙 Undo: No history available');
+      return;
+    }
 
-    const current = getHTML();
-    const previous = undoStackRef.current[undoStackRef.current.length - 1];
+    console.log('🔙 Undo: Stack size =', undoStackRef.current.length);
 
+    // Cancel any pending debounced saves
+    debouncedSaveToHistory.cancel();
+
+    // Save current state to redo stack
+    const currentHTML = getEditorStateHTML(); // Use editor state
+    const currentCursor = captureCursorPosition();
+    const currentEntry: HistoryEntry = {
+      html: currentHTML,
+      cursorPosition: currentCursor,
+      selectedBlockIds: Array.from(selectedBlockIds),
+    };
+
+    // Get previous state from undo stack
+    const previousEntry = undoStackRef.current[undoStackRef.current.length - 1];
+
+    // Update stacks
     undoStackRef.current = undoStackRef.current.slice(0, -1);
-    redoStackRef.current = [...redoStackRef.current, current];
+    // CRITICAL FIX (Bug #16): Limit redo stack size to prevent memory leak (max 50 entries)
+    redoStackRef.current = [...redoStackRef.current, currentEntry].slice(-50);
 
     setEditorState(prev => ({
       ...prev,
@@ -512,17 +988,50 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       redoStack: redoStackRef.current,
     }));
 
-    setHTML(previous, true); // true = restore focus
-  }, [getHTML, setHTML]);
+    // Restore HTML
+    setEditorStateHTML(previousEntry.html); // Use editor state
+    
+    // MEDIUM-PRIORITY FIX (Bug #5): Use RAF instead of setTimeout for cursor restoration
+    // This ensures DOM is actually updated before restoring cursor, avoiding timing issues
+    requestAnimationFrame(() => {
+      restoreCursorPosition(previousEntry.cursorPosition);
+      
+      // Restore block selection
+      if (previousEntry.selectedBlockIds && previousEntry.selectedBlockIds.length > 0) {
+        setSelectedBlockIds(new Set(previousEntry.selectedBlockIds));
+      } else {
+        setSelectedBlockIds(new Set());
+      }
+    });
+  }, [getEditorStateHTML, setEditorStateHTML, captureCursorPosition, restoreCursorPosition, debouncedSaveToHistory, selectedBlockIds]);
 
   const handleRedo = useCallback(() => {
-    if (redoStackRef.current.length === 0) return;
+    if (redoStackRef.current.length === 0) {
+      console.log('🔜 Redo: No redo history available');
+      return;
+    }
 
-    const current = getHTML();
-    const next = redoStackRef.current[redoStackRef.current.length - 1];
+    console.log('🔜 Redo: Stack size =', redoStackRef.current.length);
 
+    // Cancel any pending debounced saves
+    debouncedSaveToHistory.cancel();
+
+    // Save current state to undo stack
+    const currentHTML = getEditorStateHTML(); // Use editor state
+    const currentCursor = captureCursorPosition();
+    const currentEntry: HistoryEntry = {
+      html: currentHTML,
+      cursorPosition: currentCursor,
+      selectedBlockIds: Array.from(selectedBlockIds),
+    };
+
+    // Get next state from redo stack
+    const nextEntry = redoStackRef.current[redoStackRef.current.length - 1];
+
+    // Update stacks
     redoStackRef.current = redoStackRef.current.slice(0, -1);
-    undoStackRef.current = [...undoStackRef.current, current];
+    // CRITICAL FIX (Bug #16): Limit undo stack size when redoing (max 50 entries)
+    undoStackRef.current = [...undoStackRef.current, currentEntry].slice(-50);
 
     setEditorState(prev => ({
       ...prev,
@@ -530,14 +1039,28 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       undoStack: undoStackRef.current,
     }));
 
-    setHTML(next, true); // true = restore focus
-  }, [getHTML, setHTML]);
+    // Restore HTML
+    setEditorStateHTML(nextEntry.html); // Use editor state
+    
+    // MEDIUM-PRIORITY FIX (Bug #5): Use RAF instead of setTimeout for cursor restoration
+    // This ensures DOM is actually updated before restoring cursor, avoiding timing issues
+    requestAnimationFrame(() => {
+      restoreCursorPosition(nextEntry.cursorPosition);
+      
+      // Restore block selection
+      if (nextEntry.selectedBlockIds && nextEntry.selectedBlockIds.length > 0) {
+        setSelectedBlockIds(new Set(nextEntry.selectedBlockIds));
+      } else {
+        setSelectedBlockIds(new Set());
+      }
+    });
+  }, [getEditorStateHTML, setEditorStateHTML, captureCursorPosition, restoreCursorPosition, debouncedSaveToHistory, selectedBlockIds]);
 
   // Insert a new block
   const insertBlockAfter = useCallback((type: BlockType, afterBlockId?: string, data?: Partial<BlockData>): HTMLElement | null => {
     if (!contentRef.current) return null;
     
-    saveToHistory();
+    saveToHistoryImmediate(); // Use immediate save for structural changes
     
     const newBlock = createBlockWithControls(type, data);
     
@@ -567,7 +1090,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     emitChange();
     
     return newBlock;
-  }, [createBlockWithControls, saveToHistory, updateState, emitChange]);
+  }, [createBlockWithControls, saveToHistoryImmediate, updateState, emitChange]);
 
   // Delete a block
   const deleteBlockById = useCallback((blockId: string): void => {
@@ -584,7 +1107,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       return;
     }
     
-    saveToHistory();
+    saveToHistoryImmediate(); // Use immediate save for structural changes
     
     const block = contentRef.current.querySelector(`[data-block-id="${blockId}"]`);
     if (!block) return;
@@ -608,7 +1131,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     
     updateState();
     emitChange();
-  }, [saveToHistory, updateState, emitChange]);
+  }, [saveToHistoryImmediate, updateState, emitChange]); // CRITICAL FIX (Bug #18): Use saveToHistoryImmediate in deps
 
   // Move block up/down
   const moveBlock = useCallback((blockId: string, direction: 'up' | 'down'): void => {
@@ -617,7 +1140,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const block = contentRef.current.querySelector(`[data-block-id="${blockId}"]`);
     if (!block) return;
     
-    saveToHistory();
+    saveToHistoryImmediate(); // Use immediate save for structural changes
     
     if (direction === 'up' && block.previousElementSibling) {
       block.previousElementSibling.before(block);
@@ -627,7 +1150,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     
     updateState();
     emitChange();
-  }, [saveToHistory, updateState, emitChange]);
+  }, [saveToHistoryImmediate, updateState, emitChange]);
 
   // Transform block to different type
   const transformBlockType = useCallback((blockId: string, newType: BlockType, data?: Record<string, any>): void => {
@@ -639,7 +1162,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const currentType = wrapper.getAttribute('data-block-type');
     if (currentType === newType && !data) return;
     
-    saveToHistory();
+    saveToHistoryImmediate(); // Use immediate save for structural changes
     
     // Get current content
     const contentEl = wrapper.querySelector('[contenteditable="true"]');
@@ -665,7 +1188,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     
     updateState();
     emitChange();
-  }, [createBlockWithControls, saveToHistory, updateState, emitChange]);
+  }, [createBlockWithControls, saveToHistoryImmediate, updateState, emitChange]);
 
   // Store editorState in a ref to avoid re-creating instance on every state change
   const editorStateRef = useRef(editorState);
@@ -762,7 +1285,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const figure = input.closest('figure.cb-image') as HTMLElement;
     if (!figure) return;
     
-    saveToHistory();
+    saveToHistoryImmediate(); // Use immediate save for image upload
     
     try {
       const dataUrl = await createImageFromFile(file);
@@ -808,7 +1331,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     } catch (err) {
       console.error('Failed to load image:', err);
     }
-  }, [saveToHistory, emitChange]);
+  }, [saveToHistoryImmediate, emitChange]);
 
   // Set up image input listeners
   useEffect(() => {
@@ -826,7 +1349,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       const figure = button.closest('figure.cb-image') as HTMLElement;
       
       if (figure && align) {
-        saveToHistory();
+        saveToHistoryImmediate(); // Use immediate save for image alignment
         setImageAlign(figure, align);
         emitChange();
       }
@@ -866,7 +1389,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           const modal = createCropModal(
             img.src,
             (croppedSrc) => {
-              saveToHistory();
+              saveToHistoryImmediate(); // Use immediate save for image crop
               img.src = croppedSrc;
               emitChange();
             },
@@ -881,7 +1404,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         const checkbox = target as HTMLInputElement;
         const li = checkbox.closest('.cb-list-item') as HTMLElement;
         if (li) {
-          saveToHistory();
+          saveToHistoryImmediate(); // Use immediate save for checkbox toggle
           // Toggle cb-checked class based on new checkbox state
           // Note: checkbox.checked is already updated by the browser at this point
           li.classList.toggle('cb-checked', checkbox.checked);
@@ -900,7 +1423,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         if (url) {
           const figure = target.closest('figure.cb-video') as HTMLElement;
           if (figure) {
-            saveToHistory();
+            saveToHistoryImmediate(); // Use immediate save for video URL
             setVideoSrc(figure, url);
             emitChange();
           }
@@ -982,6 +1505,8 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   useEffect(() => {
     if (!contentRef.current || readOnly) return;
     
+    // MEDIUM-PRIORITY FIX (Bug #2): Store container reference in closure to prevent race condition during cleanup
+    // This ensures the container reference is still valid when the cleanup function runs
     const container = contentRef.current;
     let isResizing = false;
     let startX = 0;
@@ -1060,12 +1585,117 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     document.addEventListener('mousemove', handleResizeMove);
     document.addEventListener('mouseup', handleResizeEnd);
     
+    // MEDIUM-PRIORITY FIX (Bug #2): Add null check for container in cleanup
+    // Prevents errors if container is removed before cleanup runs
     return () => {
-      container.removeEventListener('mousedown', handleResizeStart);
+      if (container) {
+        container.removeEventListener('mousedown', handleResizeStart);
+      }
       document.removeEventListener('mousemove', handleResizeMove);
       document.removeEventListener('mouseup', handleResizeEnd);
     };
-  }, [readOnly, saveToHistory, emitChange]);
+  }, [readOnly, saveToHistoryImmediate, emitChange]);
+
+  /**
+   * Handle block clicks for multi-selection with Shift+Click
+   * Also handles clicking on non-editable blocks (divider, image, video)
+   */
+  const handleBlockClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    
+    // Handle drag handle clicks for multi-selection
+    const dragHandle = target.closest('.cb-block-drag');
+    if (dragHandle) {
+      console.log('🖱️ Drag handle clicked, shiftKey:', e.shiftKey);
+      
+      const block = target.closest('.cb-block') as HTMLElement;
+      const blockId = block?.getAttribute('data-block-id');
+      if (!blockId) return;
+      
+      console.log('📦 Block ID:', blockId);
+      
+      // Shift+Click for multi-selection
+      if (e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('✅ Shift+Click detected, toggling selection');
+        
+        setSelectedBlockIds(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(blockId)) {
+            newSet.delete(blockId);
+            console.log('➖ Removed from selection, new size:', newSet.size);
+          } else {
+            newSet.add(blockId);
+            console.log('➕ Added to selection, new size:', newSet.size);
+          }
+          // HIGH-PRIORITY FIX (Bug #4): Synchronize ref immediately to prevent race conditions
+          // Update ref in the same synchronous block to ensure drag operations use correct data
+          selectedBlockIdsRef.current = newSet;
+          return newSet;
+        });
+      } else {
+        // Clear selection on regular click
+        if (selectedBlockIds.size > 0) {
+          console.log('🧹 Clearing selection');
+          const emptySet = new Set<string>();
+          selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+          setSelectedBlockIds(emptySet);
+        }
+      }
+      return;
+    }
+    
+    // Handle clicks on non-editable blocks (divider, image, video)
+    const block = target.closest('.cb-block') as HTMLElement;
+    if (!block) return;
+    
+    const blockType = block.getAttribute('data-block-type');
+    const blockId = block.getAttribute('data-block-id');
+    
+    // If clicked on divider, image, or video block (not their controls)
+    if (blockType === 'divider' || blockType === 'image' || blockType === 'video') {
+      // Don't select if clicking on controls/buttons
+      if (target.closest('button, input, .cb-image-controls, .cb-table-controls')) {
+        return;
+      }
+      
+      console.log('🎯 Clicked on non-editable block:', blockType);
+      
+      if (e.shiftKey && blockId) {
+        // Shift+Click: toggle selection
+        e.preventDefault();
+        setSelectedBlockIds(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(blockId)) {
+            newSet.delete(blockId);
+          } else {
+            newSet.add(blockId);
+          }
+          // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+          selectedBlockIdsRef.current = newSet;
+          return newSet;
+        });
+      } else {
+        // Regular click: select this block only
+        if (blockId) {
+          const newSet = new Set([blockId]);
+          selectedBlockIdsRef.current = newSet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+          setSelectedBlockIds(newSet);
+          setActiveBlockId(blockId);
+        }
+      }
+    } else {
+      // Clear selection on regular click in editable blocks
+      if (selectedBlockIds.size > 0 && !e.shiftKey) {
+        console.log('🧹 Clearing selection');
+        const emptySet = new Set<string>();
+        selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+        setSelectedBlockIds(emptySet);
+      }
+    }
+  }, [selectedBlockIds]);
 
   // Handle block control clicks
   const handleBlockControlClick = useCallback((e: React.MouseEvent) => {
@@ -1086,7 +1716,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       case 'add':
         if (blockId) {
           // Insert a new paragraph block after current block
-          saveToHistory();
+          saveToHistoryImmediate(); // Use immediate save for adding block
           const newBlock = createBlockWithControls('paragraph');
           block.after(newBlock);
           
@@ -1124,7 +1754,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       case 'addRow': {
         const tableWrapper = button.closest('.cb-table-wrapper') as HTMLElement;
         if (tableWrapper) {
-          saveToHistory();
+          saveToHistoryImmediate(); // Use immediate save for table operations
           addTableRow(tableWrapper);
           emitChange();
         }
@@ -1133,7 +1763,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       case 'addCol': {
         const tableWrapper = button.closest('.cb-table-wrapper') as HTMLElement;
         if (tableWrapper) {
-          saveToHistory();
+          saveToHistoryImmediate(); // Use immediate save for table operations
           addTableColumn(tableWrapper);
           emitChange();
         }
@@ -1146,7 +1776,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           if (cell) {
             const pos = getCellPosition(cell);
             if (pos) {
-              saveToHistory();
+              saveToHistoryImmediate(); // Use immediate save for table operations
               deleteTableRow(tableWrapper, pos.row);
               emitChange();
             }
@@ -1155,7 +1785,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             const table = tableWrapper.querySelector('table');
             const rows = table?.querySelectorAll('tr');
             if (rows && rows.length > 1) {
-              saveToHistory();
+              saveToHistoryImmediate(); // Use immediate save for table operations
               deleteTableRow(tableWrapper, rows.length - 1);
               emitChange();
             }
@@ -1170,7 +1800,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           if (cell) {
             const pos = getCellPosition(cell);
             if (pos) {
-              saveToHistory();
+              saveToHistoryImmediate(); // Use immediate save for table operations
               deleteTableColumn(tableWrapper, pos.col);
               emitChange();
             }
@@ -1180,7 +1810,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             const firstRow = table?.querySelector('tr');
             const cells = firstRow?.querySelectorAll('th, td');
             if (cells && cells.length > 1) {
-              saveToHistory();
+              saveToHistoryImmediate(); // Use immediate save for table operations
               deleteTableColumn(tableWrapper, cells.length - 1);
               emitChange();
             }
@@ -1189,7 +1819,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         break;
       }
     }
-  }, [deleteBlockById, moveBlock, saveToHistory, emitChange]);
+  }, [deleteBlockById, moveBlock, saveToHistoryImmediate, emitChange]);
 
   // Handle keyboard events
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1197,6 +1827,66 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     
     // Don't handle keys if block menu is open (let it handle its own keys)
     if (showBlockMenu) return;
+
+    // Handle multi-block selection operations FIRST
+    if (selectedBlockIds.size > 0) {
+      // Delete selected blocks
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        console.log('🗑️ Deleting', selectedBlockIds.size, 'selected blocks');
+        saveToHistoryImmediate();
+        
+        // Delete all selected blocks
+        selectedBlockIds.forEach(blockId => {
+          const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
+          block?.remove();
+        });
+        
+        // Clear selection
+        const emptySet = new Set<string>();
+        selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+        setSelectedBlockIds(emptySet);
+        
+        // Ensure at least one block remains
+        if (contentRef.current && contentRef.current.children.length === 0) {
+          const newBlock = createBlockWithControls('paragraph');
+          contentRef.current.appendChild(newBlock);
+          setTimeout(() => {
+            const editable = newBlock.querySelector('[contenteditable="true"]') as HTMLElement;
+            editable?.focus();
+          }, 0);
+        }
+        
+        updateState();
+        emitChange();
+        return;
+      }
+      
+      // Duplicate selected blocks (Ctrl+D)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        console.log('📋 Duplicating', selectedBlockIds.size, 'selected blocks');
+        saveToHistoryImmediate();
+        
+        const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
+        const selectedBlocks = allBlocks.filter(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
+        
+        // Clone each selected block
+        selectedBlocks.forEach(block => {
+          const clone = block.cloneNode(true) as HTMLElement;
+          // Generate new block ID for the clone using generateId for better uniqueness
+          clone.setAttribute('data-block-id', generateId());
+          block.after(clone);
+        });
+        
+        const emptySet = new Set<string>();
+        selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+        setSelectedBlockIds(emptySet);
+        updateState();
+        emitChange();
+        return;
+      }
+    }
 
     const target = e.target as HTMLElement;
     const block = target.closest('.cb-block') as HTMLElement;
@@ -1221,6 +1911,45 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           document.execCommand('underline');
           emitChange();
           return;
+        case 'a':
+          // Two-level selection: first press selects current block, second selects all
+          e.preventDefault();
+          
+          const selection = window.getSelection();
+          if (!selection) return;
+          
+          // Get current editable element (could be nested in code block, table cell, etc.)
+          const editableElement = target.closest('[contenteditable="true"]') as HTMLElement;
+          if (!editableElement) return;
+          
+          // Check if current block content is already fully selected
+          const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+          const isBlockFullySelected = range && 
+            range.startContainer === editableElement && 
+            range.endContainer === editableElement &&
+            range.toString().trim() === editableElement.textContent?.trim();
+          
+          // Alternative check: compare selected text length to block content length
+          const selectedText = selection.toString();
+          const blockText = editableElement.textContent || '';
+          const isContentFullySelected = selectedText.trim() === blockText.trim() && selectedText.length > 0;
+          
+          if (isBlockFullySelected || isContentFullySelected) {
+            // Second Ctrl+A: Select all blocks in editor
+            if (contentRef.current) {
+              const newRange = document.createRange();
+              newRange.selectNodeContents(contentRef.current);
+              selection.removeAllRanges();
+              selection.addRange(newRange);
+            }
+          } else {
+            // First Ctrl+A: Select current block content only
+            const newRange = document.createRange();
+            newRange.selectNodeContents(editableElement);
+            selection.removeAllRanges();
+            selection.addRange(newRange);
+          }
+          return;
         case 's':
           e.preventDefault();
           if (onSave) onSave(getHTML());
@@ -1243,7 +1972,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           if (blockId) {
             e.preventDefault();
             // Transform to heading
-            saveToHistory();
+            saveToHistoryImmediate(); // Use immediate save for block type transformation
             const level = parseInt(e.key);
             const content = target.innerHTML;
             const wrapper = block;
@@ -1260,6 +1989,66 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             emitChange();
           }
           return;
+      }
+    }
+
+    // Handle escaping from inline code with Right Arrow or Space at the end
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      
+      // Check if we're at the end of a <code> element
+      let node = range.startContainer;
+      let codeElement: HTMLElement | null = null;
+      
+      // Find parent <code> element
+      while (node && node !== contentRef.current) {
+        if (node instanceof HTMLElement && node.tagName === 'CODE') {
+          codeElement = node;
+          break;
+        }
+        node = node.parentNode as Node;
+      }
+      
+      if (codeElement && selection.isCollapsed) {
+        // Check if cursor is at the very end of the code element
+        const isAtEnd = range.startOffset === (range.startContainer.textContent?.length || 0) &&
+                        range.startContainer === codeElement.lastChild;
+        
+        // Handle Right Arrow or Space when at the end of inline code
+        if (isAtEnd && (e.key === 'ArrowRight' || e.key === ' ')) {
+          e.preventDefault();
+          
+          // Create a zero-width space after the code element to place cursor
+          let nextNode = codeElement.nextSibling;
+          
+          // If there's no next sibling or it's another inline element, create a text node
+          if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
+            const textNode = document.createTextNode(e.key === ' ' ? ' ' : '\u200B');
+            codeElement.parentNode?.insertBefore(textNode, codeElement.nextSibling);
+            nextNode = textNode;
+          } else if (e.key === ' ' && nextNode.nodeType === Node.TEXT_NODE) {
+            // Add space to existing text node
+            nextNode.textContent = ' ' + (nextNode.textContent || '');
+          }
+          
+          // Move cursor to after the code element
+          const newRange = document.createRange();
+          if (e.key === ' ') {
+            newRange.setStart(nextNode, 1);
+            newRange.setEnd(nextNode, 1);
+          } else {
+            newRange.setStartAfter(codeElement);
+            newRange.setEndAfter(codeElement);
+          }
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+          
+          if (e.key === ' ') {
+            emitChange();
+          }
+          return;
+        }
       }
     }
 
@@ -1366,7 +2155,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         if (content === '') {
           // Empty list item - exit list and create paragraph
           e.preventDefault();
-          saveToHistory();
+          saveToHistoryImmediate(); // Use immediate save for structural change
           
           const listElement = li.closest('ul, ol') as HTMLElement;
           const wrapper = block;
@@ -1494,7 +2283,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         const prevType = prevBlock.getAttribute('data-block-type');
         if (prevType !== 'divider' && prevType !== 'image' && prevType !== 'video') {
           e.preventDefault();
-          saveToHistory();
+          saveToHistoryImmediate(); // Use immediate save for merge operation
           
           const prevEditable = prevBlock.querySelector('[contenteditable="true"]') as HTMLElement;
           const currentContent = target.innerHTML;
@@ -1512,6 +2301,40 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
       }
       return;
+    }
+    
+    // Handle Delete/Backspace when entire editor is selected (Ctrl+A twice)
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const selection = window.getSelection();
+      if (!selection || !contentRef.current) return;
+      
+      // Check if the entire editor content is selected
+      const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      if (range && 
+          range.startContainer === contentRef.current && 
+          range.endContainer === contentRef.current &&
+          range.startOffset === 0 &&
+          range.endOffset === contentRef.current.childNodes.length) {
+        // Entire editor is selected - clear everything and create one empty paragraph
+        e.preventDefault();
+        saveToHistoryImmediate();
+        
+        contentRef.current.innerHTML = '';
+        const block = createBlockWithControls('paragraph');
+        contentRef.current.appendChild(block);
+        
+        // Focus the new empty block
+        setTimeout(() => {
+          const editable = block.querySelector('[contenteditable="true"]') as HTMLElement;
+          if (editable) {
+            editable.focus();
+          }
+        }, 0);
+        
+        updateState();
+        emitChange();
+        return;
+      }
     }
 
     // Slash command
@@ -1551,29 +2374,340 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       return;
     }
   }, [
-    readOnly, saveToHistory, insertBlockAfter, deleteBlockById, transformBlockType,
-    handleUndo, handleRedo, onSave, getHTML, emitChange
+    readOnly, showBlockMenu, selectedBlockIds, saveToHistoryImmediate, createBlockWithControls,
+    updateState, emitChange, insertBlockAfter, deleteBlockById, transformBlockType,
+    handleUndo, handleRedo, onSave, getHTML
   ]);
 
   // Handle input
-  const handleInput = useCallback(() => {
+  const handleInput = useCallback((e?: React.FormEvent<HTMLDivElement>) => {
+    // Check for markdown shortcuts
+    if (e?.target instanceof HTMLElement) {
+      const target = e.target;
+      const block = target.closest('.cb-block');
+      const blockType = block?.getAttribute('data-block-type');
+      const blockId = block?.getAttribute('data-block-id');
+      
+      // Only process markdown shortcuts for paragraph blocks
+      if (blockType === 'paragraph' && blockId) {
+        const text = target.textContent || '';
+        
+        // Check for markdown patterns at the start of the block
+        // Pattern: "- " for bullet list
+        if (text === '- ' || text === '* ') {
+          target.textContent = '';
+          transformBlockType(blockId, 'bulletList');
+          return;
+        }
+        
+        // Pattern: "1. " for numbered list
+        if (/^\d+\.\s$/.test(text)) {
+          target.textContent = '';
+          transformBlockType(blockId, 'numberedList');
+          return;
+        }
+        
+        // Pattern: "> " for quote
+        if (text === '> ') {
+          target.textContent = '';
+          transformBlockType(blockId, 'quote');
+          return;
+        }
+      }
+    }
+    
     updateState();
     emitChange();
-  }, [updateState, emitChange]);
+    saveToHistory(); // Debounced save on content change
+  }, [updateState, emitChange, saveToHistory, transformBlockType]);
 
-  // Handle paste
+  /**
+   * Handle keyboard events at container level (for global shortcuts like Ctrl+Z)
+   * This ensures undo/redo works even when no contenteditable is focused
+   */
+  const handleContainerKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (readOnly) return;
+    
+    // Escape key - clear block selection
+    if (e.key === 'Escape') {
+      if (selectedBlockIds.size > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('🧹 Escape pressed - clearing selection');
+        const emptySet = new Set<string>();
+        selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+        setSelectedBlockIds(emptySet);
+        return;
+      }
+    }
+    
+    // Handle global shortcuts (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Shift+A - Select all blocks
+      if (e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const allBlocks = contentRef.current?.querySelectorAll('.cb-block');
+        if (allBlocks && allBlocks.length > 0) {
+          const allBlockIds = Array.from(allBlocks)
+            .map(block => block.getAttribute('data-block-id'))
+            .filter(id => id !== null) as string[];
+          
+          const newSet = new Set(allBlockIds);
+          selectedBlockIdsRef.current = newSet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+          setSelectedBlockIds(newSet);
+          console.log('📦 Selected all', allBlockIds.length, 'blocks');
+          
+          // Focus container to keep keyboard shortcuts active
+          if (containerRef.current) {
+            containerRef.current.focus();
+          }
+        }
+        return;
+      }
+      
+      if (e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+      
+      if (e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleRedo();
+        return;
+      }
+    }
+  }, [readOnly, handleUndo, handleRedo, selectedBlockIds]);
+
+  /**
+   * Handle clicks on the editor container to keep it "active"
+   * This ensures keyboard shortcuts work even when clicking empty space
+   * Also clears block selection when clicking outside blocks (unless Shift is held)
+   */
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    // If clicking inside the editor but not on a contenteditable element,
+    // focus the container so keyboard shortcuts work
+    if (!containerRef.current) return;
+    
+    const target = e.target as HTMLElement;
+    const clickedContentEditable = target.closest('[contenteditable="true"]');
+    const clickedBlock = target.closest('.cb-block');
+    const clickedDragHandle = target.closest('.cb-block-drag');
+    
+    // Clear selection if:
+    // 1. Not holding Shift (multi-select modifier)
+    // 2. Not clicking on a block or drag handle
+    // 3. Have blocks currently selected
+    if (!e.shiftKey && !clickedBlock && !clickedDragHandle && selectedBlockIds.size > 0) {
+      console.log('🧹 Clearing selection - clicked outside blocks');
+      const emptySet = new Set<string>();
+      selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+      setSelectedBlockIds(emptySet);
+    }
+    
+    // If not clicking on a contenteditable, focus the container
+    if (!clickedContentEditable) {
+      // Focus the container to enable keyboard shortcuts
+      containerRef.current.focus();
+    }
+  }, [selectedBlockIds]);
+
+  /**
+   * Handle copy - extract clean semantic HTML without editor UI
+   * This ensures copied content is pristine and professional
+   * Handles both text selection and multi-block selection
+   */
+  const handleCopy = useCallback((e: React.ClipboardEvent) => {
+    // Priority 1: Multi-block selection (via Shift+Click)
+    if (selectedBlockIds.size > 0) {
+      e.preventDefault();
+      console.log('📋 Copying', selectedBlockIds.size, 'selected blocks');
+      
+      // Get clean HTML from selected blocks
+      const cleanHTML = getCleanSelectionHTML();
+      
+      // Get plain text from selected blocks
+      const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
+      const selectedBlocks = allBlocks.filter(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
+      const plainText = selectedBlocks.map(b => b.textContent || '').join('\n\n');
+      
+      // Set clipboard data
+      e.clipboardData.setData('text/html', cleanHTML);
+      e.clipboardData.setData('text/plain', plainText);
+      return;
+    }
+    
+    // Priority 2: Text selection
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount || selection.isCollapsed) return;
+    
+    // Check if selection is within our editor
+    const range = selection.getRangeAt(0);
+    if (!contentRef.current?.contains(range.commonAncestorContainer)) return;
+    
+    e.preventDefault();
+    
+    // Get clean HTML without editor artifacts
+    const cleanHTML = getCleanSelectionHTML();
+    const plainText = selection.toString();
+    
+    // Set both HTML and plain text in clipboard
+    e.clipboardData.setData('text/html', cleanHTML);
+    e.clipboardData.setData('text/plain', plainText);
+  }, [selectedBlockIds, getCleanSelectionHTML]);
+
+  /**
+   * Handle cut - same as copy but also delete selection
+   * Handles both text selection and multi-block selection
+   */
+  const handleCut = useCallback((e: React.ClipboardEvent) => {
+    // Priority 1: Multi-block selection (via Shift+Click)
+    if (selectedBlockIds.size > 0) {
+      e.preventDefault();
+      console.log('✂️ Cutting', selectedBlockIds.size, 'selected blocks');
+      
+      // Get clean HTML from selected blocks
+      const cleanHTML = getCleanSelectionHTML();
+      
+      // Get plain text from selected blocks
+      const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
+      const selectedBlocks = allBlocks.filter(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
+      const plainText = selectedBlocks.map(b => b.textContent || '').join('\n\n');
+      
+      // Set clipboard data
+      e.clipboardData.setData('text/html', cleanHTML);
+      e.clipboardData.setData('text/plain', plainText);
+      
+      // Delete selected blocks
+      saveToHistoryImmediate();
+      selectedBlockIds.forEach(blockId => {
+        const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
+        block?.remove();
+      });
+      
+      const emptySet = new Set<string>();
+      selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
+      setSelectedBlockIds(emptySet);
+      
+      // Ensure at least one block remains
+      if (contentRef.current && contentRef.current.children.length === 0) {
+        const newBlock = createBlockWithControls('paragraph');
+        contentRef.current.appendChild(newBlock);
+        setTimeout(() => {
+          const editable = newBlock.querySelector('[contenteditable="true"]') as HTMLElement;
+          editable?.focus();
+        }, 0);
+      }
+      
+      updateState();
+      emitChange();
+      return;
+    }
+    
+    // Priority 2: Text selection
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount || selection.isCollapsed) return;
+    
+    // Check if selection is within our editor
+    const range = selection.getRangeAt(0);
+    if (!contentRef.current?.contains(range.commonAncestorContainer)) return;
+    
+    e.preventDefault();
+    
+    // Get clean HTML without editor artifacts
+    const cleanHTML = getCleanSelectionHTML();
+    const plainText = selection.toString();
+    
+    // Set clipboard data
+    e.clipboardData.setData('text/html', cleanHTML);
+    e.clipboardData.setData('text/plain', plainText);
+    
+    // Delete the selection
+    saveToHistoryImmediate(); // Use immediate save (was debounced before - bug!)
+    document.execCommand('delete');
+    updateState();
+    emitChange();
+  }, [selectedBlockIds, getCleanSelectionHTML, saveToHistory, saveToHistoryImmediate, updateState, emitChange, createBlockWithControls]);
+
+  /**
+   * Handle paste - create proper blocks instead of merging into one
+   * Detects block structure and recreates blocks professionally
+   */
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (readOnly) return;
     
     e.preventDefault();
-    saveToHistory();
+    saveToHistoryImmediate(); // Use immediate save for paste operation
     
-    const cleanHtml = sanitizePaste(e.clipboardData);
-    document.execCommand('insertHTML', false, cleanHtml);
+    const html = e.clipboardData.getData('text/html');
+    const plainText = e.clipboardData.getData('text/plain');
+    
+    if (!html && !plainText) return;
+    
+    console.log('📥 Pasting content, HTML length:', html.length, 'blocks selected:', selectedBlockIds.size);
+    
+    // Parse HTML to detect blocks
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html || plainText.replace(/\n/g, '<br>');
+    
+    // Check if pasted content contains block-level elements
+    const pastedBlocks = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre, hr, table, figure, details, aside, div.cb-callout, div.cb-code');
+    
+    if (pastedBlocks.length > 0) {
+      console.log('📦 Pasting', pastedBlocks.length, 'blocks');
+      
+      // Multi-block paste - create actual blocks
+      const currentBlock = document.activeElement?.closest('.cb-block') as HTMLElement;
+      const currentBlockId = currentBlock?.getAttribute('data-block-id');
+      
+      let previousBlockId = currentBlockId || undefined;
+      
+      pastedBlocks.forEach((element) => {
+        if (!(element instanceof HTMLElement)) return;
+        
+        const blockType = detectBlockType(element);
+        const blockData = extractBlockData(element, blockType);
+        
+        // Create new block
+        const newBlock = insertBlockAfter(blockType, previousBlockId, blockData);
+        if (newBlock) {
+          previousBlockId = newBlock.getAttribute('data-block-id') || undefined;
+        }
+      });
+      
+      // Clear the current block if it was empty
+      if (currentBlock) {
+        const editable = currentBlock.querySelector('[contenteditable="true"]');
+        if (editable && editable.textContent?.trim() === '') {
+          const blockId = currentBlock.getAttribute('data-block-id');
+          if (blockId) {
+            deleteBlockById(blockId);
+          }
+        }
+      }
+      
+      // Clear multi-block selection after paste
+      if (selectedBlockIds.size > 0) {
+        console.log('🧹 Clearing multi-block selection after paste');
+        setSelectedBlockIds(new Set());
+      }
+    } else {
+      // Inline paste - sanitize and insert
+      const cleanHtml = sanitizePaste(e.clipboardData);
+      document.execCommand('insertHTML', false, cleanHtml);
+    }
     
     updateState();
     emitChange();
-  }, [readOnly, saveToHistory, updateState, emitChange]);
+  }, [readOnly, selectedBlockIds, saveToHistoryImmediate, insertBlockAfter, deleteBlockById, detectBlockType, extractBlockData, updateState, emitChange]);
 
   // Handle focus
   const handleFocus = useCallback((e: React.FocusEvent) => {
@@ -1593,9 +2727,86 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   }, [onBlur]);
 
   // Handle block selection from menu
-  const handleBlockMenuSelect = useCallback((type: BlockType, data?: Record<string, any>) => {
+  const handleBlockMenuSelect = useCallback((type: BlockType, data?: Record<string, any>, inline?: boolean) => {
     setShowBlockMenu(false);
     
+    // Handle inline elements (like date)
+    if (inline) {
+      if (type === 'date') {
+        // Insert today's date inline
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        
+        const range = selection.getRangeAt(0);
+        const today = new Date();
+        
+        // Format date function (same as Toolbar)
+        const formatDate = (date: Date): string => {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const months = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+          ];
+          
+          const dayName = days[date.getDay()];
+          const day = date.getDate();
+          const monthName = months[date.getMonth()];
+          const year = date.getFullYear();
+          
+          return `${dayName}, ${day} ${monthName} ${year}`;
+        };
+        
+        // Create date span element
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'cb-date-inline';
+        dateSpan.setAttribute('data-date', today.toISOString());
+        dateSpan.setAttribute('contenteditable', 'false');
+        dateSpan.textContent = formatDate(today);
+        
+        // If we have an active block, make sure we insert into its editable area
+        if (activeBlockId) {
+          const currentBlock = contentRef.current?.querySelector(`[data-block-id="${activeBlockId}"]`);
+          const editable = currentBlock?.querySelector('[contenteditable="true"]');
+          
+          if (editable) {
+            // Focus the editable element first
+            (editable as HTMLElement).focus();
+            
+            // Get selection again after focusing
+            const newSelection = window.getSelection();
+            if (newSelection && newSelection.rangeCount > 0) {
+              const newRange = newSelection.getRangeAt(0);
+              newRange.deleteContents();
+              newRange.insertNode(dateSpan);
+              
+              // Add a space after the date
+              const space = document.createTextNode(' ');
+              newRange.setStartAfter(dateSpan);
+              newRange.insertNode(space);
+              
+              // Move cursor after the space
+              newRange.setStartAfter(space);
+              newRange.setEndAfter(space);
+              newSelection.removeAllRanges();
+              newSelection.addRange(newRange);
+            }
+          }
+        } else {
+          // Insert at cursor
+          range.deleteContents();
+          range.insertNode(dateSpan);
+          
+          // Move cursor after the date
+          range.setStartAfter(dateSpan);
+          range.setEndAfter(dateSpan);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+      return;
+    }
+    
+    // Normal block insertion
     if (activeBlockId) {
       // Check if current block is empty - if so, transform it
       const currentBlock = contentRef.current?.querySelector(`[data-block-id="${activeBlockId}"]`);
@@ -1627,6 +2838,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     setHoveredBlockId(null);
   }, []);
 
+  // MEDIUM-PRIORITY FIX (Bug #3): Cleanup debounced function on unmount to prevent memory leaks
+  // Cancel any pending debounced saves when component unmounts
+  useEffect(() => {
+    return () => {
+      debouncedSaveToHistory.cancel();
+    };
+  }, [debouncedSaveToHistory]);
+
   const editorClasses = [
     `${classPrefix}-editor`,
     darkMode ? `${classPrefix}-dark` : `${classPrefix}-light`,
@@ -1635,7 +2854,15 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   ].filter(Boolean).join(' ');
 
   return (
-    <div ref={containerRef} className={editorClasses} style={style} data-editor-root>
+    <div 
+      ref={containerRef} 
+      className={editorClasses} 
+      style={style} 
+      data-editor-root
+      tabIndex={0}
+      onKeyDown={handleContainerKeyDown}
+      onClick={handleContainerClick}
+    >
       {showToolbar && toolbarPosition === 'top' && editorInstance && (
         <Toolbar editor={editorInstance} darkMode={darkMode} />
       )}
@@ -1643,9 +2870,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       <div
         ref={contentRef}
         className={`${classPrefix}-content`}
-        onClick={handleBlockControlClick}
+        onClick={(e) => {
+          handleBlockClick(e);
+          handleBlockControlClick(e);
+        }}
         onKeyDown={handleKeyDown}
         onInput={handleInput}
+        onCopy={handleCopy}
+        onCut={handleCut}
         onPaste={handlePaste}
         onFocus={handleFocus}
         onBlur={handleBlur}
@@ -1675,6 +2907,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         wordCount={editorState.wordCount}
         charCount={editorState.charCount}
         readingTime={calculateReadingTime(editorState.wordCount)}
+        selectedBlockCount={selectedBlockIds.size}
         darkMode={darkMode}
       />
     </div>
