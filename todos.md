@@ -21,13 +21,13 @@
 
 5. Table of Contents _> should have the prop of the px. -> go to the content -> for top - {some px} because the conetnt comes at below the navbar at top.. (by default keep some constant like the 5 px)
 ​
-6. download pdf option -> in the editor -> that will download the content into -> pdf -> in our styles -> with ------------ but if its going to make the package bulky then build our own pdf maker -> in our styles -> lightweight
+6. ✅ download pdf option -> in the editor -> that will download the content into -> pdf -> in our styles -> with ------------ but if its going to make the package bulky then build our own pdf maker -> in our styles -> lightweight
 
-7. Add the functionality -> that makes the selected content 1-> Lowercase, 2->Uppercase, 3-> Capitalize(each word -> first letter) -> and if there is already implemented the remove that functionality..ex-> If I selected the text and selected the -> Capitalize -> it Capitalize each word -> first letter -> but if I click again on the Capitalize, it should make them normal -> (like the vice versa) -> same for the Lowercase and Uppercase.. -> this should be implemented very professional manner -> on the toolbar -> only 1 button should be there -> after clicking on it -> it should open the 3 options popover -> for selecting what to choose -> between these 3 functions for the selected text.. the icons should be Aa <CaseSensitive /> -> -> implement this professionally -> like the link is implemented -> very professionally give correct name 
+7. ✅ Add the functionality -> that makes the selected content 1-> Lowercase, 2->Uppercase, 3-> Capitalize(each word -> first letter) -> and if there is already implemented the remove that functionality..ex-> If I selected the text and selected the -> Capitalize -> it Capitalize each word -> first letter -> but if I click again on the Capitalize, it should make them normal -> (like the vice versa) -> same for the Lowercase and Uppercase.. -> this should be implemented very professional manner -> on the toolbar -> only 1 button should be there -> after clicking on it -> it should open the 3 options popover -> for selecting what to choose -> between these 3 functions for the selected text.. the icons should be Aa <CaseSensitive /> -> -> implement this professionally -> like the link is implemented -> very professionally give correct name 
 
 ---
 
-7. THe selected content (any type of content the editor->blocks) will have the -> some basic tools (absolute to what the content is selected) -> like the bold, italic, strikethrough, color, highlight, link, CaseSensitive, (in future AI edit) -> same like the word editor -> has the popover above the selected content -> those buttons will edit the content that is selected and return the pointer there only -> not get lost -> like the -> word or any high professional editor
+8. ✅ THe selected content (any type of content the editor->blocks) will have the -> some basic tools (absolute to what the content is selected) -> like the bold, italic, strikethrough, color, highlight, link, CaseSensitive, (in future AI edit) -> same like the word editor -> has the popover above the selected content -> those buttons will edit the content that is selected and return the pointer there only -> not get lost -> like the -> word or any high professional editor
 
 # Future Scope (versions) [Not need to implement right now]
 
@@ -37,11 +37,11 @@
 
 3. WE should implement the AI -> in this editor -> Scopes -> 1st scope - full document edit/enw content -> that will directly paste/render the content in the editor blocks according to our format -> by giving the icon[Button] on the toolbar and in the / command panel (But before that we have to fix the format) 2nd scope block wise AI editor -> just like the selected content to bold -> just like we have implemented the -> link for the selected content and popover for that link -> the selected content now
 
-4. add feature to change the fonts -> for the selected content
+4. ✅ add feature to change the fonts -> for the selected content
 
-5. Add feature to change the -> font size (increase or decrease the text font) -> of the selected text only -> like the link and the bold ..
+5. ✅ Add feature to change the -> font size (increase or decrease the text font) -> of the selected text only -> like the link and the bold ..
 
-6. integrate the Excalidraw -> see the reference for the integration from the -> and add the image as the image block
+6. ✅ integrate the Excalidraw -> see the reference for the integration from the -> and add the image as the image block
 
 
 # Question and solutions:

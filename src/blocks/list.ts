@@ -114,10 +114,10 @@ function createListBlock(type: ListType): BlockDefinition {
           list.appendChild(createListItemElement(item, type));
         });
       } else {
-        // Create default empty item
+        // Create default item (with content if provided from paragraph transformation)
         const defaultItem: ListItem = {
           id: generateId(),
-          content: '',
+          content: (data as any)?.content || '',
           checked: false,
         };
         list.appendChild(createListItemElement(defaultItem, type));

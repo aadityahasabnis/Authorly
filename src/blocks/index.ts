@@ -47,6 +47,7 @@ export {
   getCellPosition,
 } from './table';
 export { linkPreviewBlock } from './linkPreview';
+export { excalidrawBlock } from './excalidraw';
 
 // Import all blocks for registration
 import { paragraphBlock } from './paragraph';
@@ -69,6 +70,7 @@ import { accordionBlock } from './accordion';
 import { dateBlock } from './date';
 import { tableBlock } from './table';
 import { linkPreviewBlock } from './linkPreview';
+import { excalidrawBlock } from './excalidraw';
 
 import type { BlockDefinition } from '../core/types';
 
@@ -96,6 +98,7 @@ export const allBlocks: BlockDefinition[] = [
   dateBlock,
   tableBlock,
   linkPreviewBlock,
+  excalidrawBlock,
 ];
 
 /**

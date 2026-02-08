@@ -41,13 +41,6 @@ export const videoBlock: BlockDefinition = {
         iframe.setAttribute('frameborder', '0');
         iframe.setAttribute('allowfullscreen', 'true');
         iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
-        
-        if (data.width) {
-          iframe.style.width = typeof data.width === 'number' ? `${data.width}px` : data.width;
-        }
-        if (data.height) {
-          iframe.style.height = typeof data.height === 'number' ? `${data.height}px` : data.height;
-        }
 
         container.appendChild(iframe);
       } else {
@@ -60,28 +53,28 @@ export const videoBlock: BlockDefinition = {
         if (data.poster) {
           video.poster = data.poster;
         }
-        if (data.width) {
-          video.style.width = typeof data.width === 'number' ? `${data.width}px` : data.width;
-        }
-        if (data.height) {
-          video.style.height = typeof data.height === 'number' ? `${data.height}px` : data.height;
-        }
 
         container.appendChild(video);
       }
     } else {
-      // Premium placeholder
+      // Minimal professional placeholder
       const placeholder = document.createElement('div');
       placeholder.className = 'cb-video-placeholder';
       placeholder.innerHTML = `
         <div class="cb-video-placeholder-content">
-          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="m22 8-6 4 6 4V8Z"/>
-            <rect width="14" height="12" x="2" y="6" rx="2" ry="2"/>
-          </svg>
-          <span>Embed a video from YouTube, Vimeo, or upload</span>
-          <span class="cb-video-placeholder-hint">Paste a URL below and press Enter</span>
-          <input type="text" class="cb-video-url-input" placeholder="https://youtube.com/watch?v=... or vimeo.com/..." />
+          <div class="cb-video-placeholder-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m22 8-6 4 6 4V8Z"/>
+              <rect width="14" height="12" x="2" y="6" rx="2" ry="2"/>
+            </svg>
+          </div>
+          <div class="cb-video-placeholder-text">
+            <span class="cb-video-placeholder-title">Embed video from YouTube or Vimeo</span>
+            <span class="cb-video-placeholder-hint">Paste URL below and press Enter</span>
+          </div>
+        </div>
+        <div class="cb-video-url-wrapper" contenteditable="false">
+          <input type="url" class="cb-video-url-input" placeholder="https://youtube.com/watch?v=... or vimeo.com/..." />
         </div>
       `;
       container.appendChild(placeholder);
@@ -113,8 +106,6 @@ export const videoBlock: BlockDefinition = {
       src: iframe?.src || video?.src || '',
       poster: video?.poster || undefined,
       caption: caption?.textContent || undefined,
-      width: iframe?.style.width || video?.style.width || undefined,
-      height: iframe?.style.height || video?.style.height || undefined,
     };
   },
 
@@ -211,3 +202,4 @@ export function setVideoSrc(figure: HTMLElement, src: string): void {
     container.appendChild(video);
   }
 }
+

@@ -22,7 +22,8 @@ export type BlockType =
   | 'accordion'
   | 'table'
   | 'linkPreview'
-  | 'date';
+  | 'date'
+  | 'excalidraw';
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 

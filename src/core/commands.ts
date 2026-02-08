@@ -254,6 +254,42 @@ export function setHighlightColor(container: HTMLElement, color: string): void {
 }
 
 /**
+ * Set font family
+ */
+export function setFontFamily(container: HTMLElement, fontFamily: string): void {
+  document.execCommand('fontName', false, fontFamily);
+}
+
+/**
+ * Set font size
+ */
+export function setFontSize(container: HTMLElement, size: string): void {
+  // execCommand uses sizes 1-7, but we want pixel/rem values
+  // Instead, wrap selection in span with font-size style
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+  const range = selection.getRangeAt(0);
+  
+  try {
+    const span = document.createElement('span');
+    span.style.fontSize = size;
+    
+    const contents = range.extractContents();
+    span.appendChild(contents);
+    range.insertNode(span);
+    
+    // Select the span
+    const newRange = document.createRange();
+    newRange.selectNodeContents(span);
+    selection.removeAllRanges();
+    selection.addRange(newRange);
+  } catch (error) {
+    console.warn('setFontSize: Failed to apply font size', error);
+  }
+}
+
+/**
  * Set text alignment
  */
 export function setAlignment(
@@ -518,6 +554,8 @@ export function createCommandExecutor(editor: EditorInstance) {
     unlink: () => removeLink(editor.container),
     textColor: (color: string) => setTextColor(editor.container, color),
     highlight: (color: string) => setHighlightColor(editor.container, color),
+    fontFamily: (font: string) => setFontFamily(editor.container, font),
+    fontSize: (size: string) => setFontSize(editor.container, size),
     clearFormat: () => clearFormatting(editor.container),
     alignLeft: (el: HTMLElement) => setAlignment(el, 'left'),
     alignCenter: (el: HTMLElement) => setAlignment(el, 'center'),

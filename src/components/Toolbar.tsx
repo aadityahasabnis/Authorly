@@ -30,9 +30,11 @@ import {
   Video,
   Minus,
   Table,
+  PenTool,
   Eraser,
   Download,
   FileCode,
+  FileText,
   ChevronDown,
   AlertCircle,
   Palette,
@@ -721,6 +723,142 @@ ${html}
     URL.revokeObjectURL(url);
   }, [editor]);
 
+  // Handle PDF export
+  const handleExportPDF = useCallback(() => {
+    if (!editor) return;
+    
+    const html = editor.getHTML();
+    
+    // Create a temporary iframe for PDF generation
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+    
+    const iframeDoc = iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      return;
+    }
+    
+    // Write styled content to iframe
+    iframeDoc.open();
+    iframeDoc.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Document</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 1.5cm;
+          }
+          @media print {
+            body {
+              margin: 0;
+              padding: 0;
+            }
+          }
+          body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 100%;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            color: #111827;
+            font-size: 11pt;
+          }
+          h1 { font-size: 24pt; margin: 12pt 0; font-weight: 700; }
+          h2 { font-size: 20pt; margin: 10pt 0; font-weight: 600; }
+          h3 { font-size: 16pt; margin: 8pt 0; font-weight: 600; }
+          h4 { font-size: 14pt; margin: 6pt 0; font-weight: 600; }
+          h5 { font-size: 12pt; margin: 6pt 0; font-weight: 600; }
+          h6 { font-size: 11pt; margin: 6pt 0; font-weight: 600; }
+          p { margin: 6pt 0; }
+          ul, ol { margin: 6pt 0; padding-left: 20pt; }
+          li { margin: 3pt 0; }
+          img { max-width: 100%; height: auto; page-break-inside: avoid; }
+          pre {
+            background: #f3f4f6;
+            padding: 8pt;
+            border-radius: 4pt;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 9pt;
+            page-break-inside: avoid;
+          }
+          code {
+            font-family: 'Courier New', monospace;
+            background: #f3f4f6;
+            padding: 2pt 4pt;
+            border-radius: 2pt;
+            font-size: 9pt;
+          }
+          blockquote {
+            border-left: 3pt solid #3b82f6;
+            margin: 8pt 0;
+            padding: 4pt 12pt;
+            background: #f8fafc;
+            page-break-inside: avoid;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 8pt 0;
+            page-break-inside: avoid;
+          }
+          th, td {
+            border: 1pt solid #e5e7eb;
+            padding: 4pt 6pt;
+            text-align: left;
+          }
+          th {
+            background: #f9fafb;
+            font-weight: 600;
+          }
+          hr {
+            border: none;
+            border-top: 1pt solid #e5e7eb;
+            margin: 12pt 0;
+          }
+          a {
+            color: #2563eb;
+            text-decoration: underline;
+          }
+          strong { font-weight: 700; }
+          em { font-style: italic; }
+          .cb-hashtag {
+            background: #dbeafe;
+            border: 1pt solid #93c5fd;
+            border-radius: 2pt;
+            padding: 1pt 3pt;
+            color: #1e40af;
+            font-weight: 500;
+          }
+        </style>
+      </head>
+      <body>
+        ${html}
+      </body>
+      </html>
+    `);
+    iframeDoc.close();
+    
+    // Wait for content to load, then print
+    iframe.contentWindow?.focus();
+    setTimeout(() => {
+      iframe.contentWindow?.print();
+      
+      // Remove iframe after a delay
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 250);
+  }, [editor]);
+
   // Handle date insertion
   const handleInsertDate = useCallback((date: Date) => {
     if (!editor?.container) return;
@@ -1156,6 +1294,11 @@ ${html}
           action: () => editor.insertBlock('video'),
         },
         {
+          icon: PenTool,
+          label: 'Excalidraw',
+          action: () => editor.insertBlock('excalidraw'),
+        },
+        {
           icon: Table,
           label: 'Table',
           action: () => editor.insertBlock('table'),
@@ -1189,6 +1332,11 @@ ${html}
           icon: Download,
           label: 'Export HTML',
           action: () => handleExport('html'),
+        },
+        {
+          icon: FileText,
+          label: 'Export PDF',
+          action: () => handleExportPDF(),
         },
       ],
     },

@@ -61,22 +61,29 @@ export const imageBlock: BlockDefinition = {
       
       imgContainer.appendChild(resizableWrapper);
     } else {
-      // Placeholder for upload - premium design
+      // Minimal professional placeholder
       const placeholder = document.createElement('div');
       placeholder.className = 'cb-image-placeholder';
       placeholder.innerHTML = `
         <div class="cb-image-placeholder-content">
-          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="9" cy="9" r="2"/>
-            <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
-          </svg>
-          <span>Drop an image here, or click to upload</span>
-          <span class="cb-image-placeholder-hint">Supports JPG, PNG, GIF, WebP up to 10MB</span>
+          <div class="cb-image-placeholder-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="9" cy="9" r="2"/>
+              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
+            </svg>
+          </div>
+          <div class="cb-image-placeholder-text">
+            <span class="cb-image-placeholder-title">Click to upload or drag image</span>
+            <span class="cb-image-placeholder-hint">JPG, PNG, GIF, WebP • Max 10MB</span>
+          </div>
           <input type="file" accept="image/*" class="cb-image-input" />
         </div>
-        <div class="cb-image-url-wrapper">
-          <input type="text" class="cb-image-url-input" placeholder="Paste image URL and press Enter" />
+        <div class="cb-image-url-divider">
+          <span>or</span>
+        </div>
+        <div class="cb-image-url-wrapper" contenteditable="false">
+          <input type="url" class="cb-image-url-input" placeholder="Paste image URL and press Enter" />
         </div>
       `;
       imgContainer.appendChild(placeholder);

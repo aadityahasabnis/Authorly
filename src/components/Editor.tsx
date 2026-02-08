@@ -39,9 +39,15 @@ import {
   getBlockFromChild,
 } from '../utils/helpers';
 import { Toolbar } from './Toolbar';
+import { SelectionToolbar } from './SelectionToolbar';
 import { BlockMenu } from './BlockMenu';
 import { StatusBar, calculateReadingTime } from './StatusBar';
+import { ExcalidrawModal } from './ExcalidrawModal';
 import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+
+// Type declarations for Excalidraw - using any for now to avoid import path issues
+type ExcalidrawElement = any;
+type AppState = any;
 import { addTableRow, addTableColumn, deleteTableRow, deleteTableColumn, getFocusedCell, getCellPosition } from '../blocks/table';
 import { setImageSrc, createImageFromFile, setImageAlign, createCropModal } from '../blocks/image';
 import { setVideoSrc } from '../blocks/video';
@@ -116,6 +122,19 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     wordCount: 0,
     charCount: 0,
     isDirty: false,
+  });
+
+  // Excalidraw modal state
+  const [excalidrawModal, setExcalidrawModal] = useState<{
+    isOpen: boolean;
+    blockId: string | null;
+    initialElements: any[];
+    initialAppState: any;
+  }>({
+    isOpen: false,
+    blockId: null,
+    initialElements: [],
+    initialAppState: {},
   });
 
   // Register all blocks on mount
@@ -1182,7 +1201,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       const editable = codeEditable || newBlock.querySelector('[contenteditable="true"]');
       if (editable instanceof HTMLElement) {
         editable.focus();
-        moveCursorToStart(editable);
+        moveCursorToEnd(editable);
       }
     }, 50);
     
@@ -1333,7 +1352,44 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     }
   }, [saveToHistoryImmediate, emitChange]);
 
+  // Handle Excalidraw modal save
+  const handleExcalidrawSave = useCallback((imageDataUrl: string, elements: readonly ExcalidrawElement[], appState: Partial<AppState>) => {
+    if (!excalidrawModal.blockId || !contentRef.current) return;
+    
+    // Find the block wrapper
+    const blockWrapper = contentRef.current.querySelector(
+      `[data-block-id="${excalidrawModal.blockId}"]`
+    ) as HTMLElement;
+    
+    if (!blockWrapper) return;
+    
+    // Get the inner excalidraw element
+    const excalidrawElement = blockWrapper.querySelector('.cb-excalidraw') as HTMLElement;
+    if (!excalidrawElement) return;
+    
+    saveToHistoryImmediate();
+    
+    // Update the block with the drawing
+    const definition = blockRegistry.get('excalidraw');
+    if (definition) {
+      definition.update(excalidrawElement, {
+        imageDataUrl,
+        elements,
+        appState,
+      });
+    }
+    
+    emitChange();
+    setExcalidrawModal({ isOpen: false, blockId: null, initialElements: [], initialAppState: {} });
+  }, [excalidrawModal.blockId, saveToHistoryImmediate, emitChange]);
+
+  // Handle Excalidraw modal close
+  const handleExcalidrawClose = useCallback(() => {
+    setExcalidrawModal({ isOpen: false, blockId: null, initialElements: [], initialAppState: {} });
+  }, []);
+
   // Set up image input listeners
+  // CRITICAL FIX (Bug #1): Properly cleanup event listeners to prevent memory leaks
   useEffect(() => {
     if (!contentRef.current) return;
     
@@ -1358,14 +1414,21 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // Use event delegation for image inputs
     const container = contentRef.current;
     
-    container.addEventListener('change', (e) => {
+    // Define all event handlers with proper references for cleanup
+    const handleChange = (e: Event) => {
       if ((e.target as HTMLElement).matches('.cb-image-input')) {
         handleImageInputChange(e);
       }
-    });
+    };
     
-    container.addEventListener('click', (e) => {
+    const handleClickMain = (e: Event) => {
       const target = e.target as HTMLElement;
+      
+      // Don't interfere with input/textarea interactions
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        console.log('🎯 Click on input field, allowing default behavior:', target.className);
+        return;
+      }
       
       // Handle image alignment clicks
       if (target.closest('.cb-image-align')) {
@@ -1411,13 +1474,80 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           emitChange();
         }
       }
-    });
-    
-    // Handle video URL input
-    container.addEventListener('keydown', (e) => {
-      const target = e.target as HTMLElement;
-      if (target.classList.contains('cb-video-url-input') && e.key === 'Enter') {
+      
+      // Handle Excalidraw placeholder click
+      if (target.closest('.cb-excalidraw-placeholder')) {
         e.preventDefault();
+        e.stopPropagation();
+        // Find the block wrapper (not the inner .cb-excalidraw element)
+        const blockWrapper = target.closest('.cb-block') as HTMLElement;
+        if (blockWrapper) {
+          const blockId = blockWrapper.getAttribute('data-block-id');
+          if (blockId) {
+            setExcalidrawModal({
+              isOpen: true,
+              blockId,
+              initialElements: [],
+              initialAppState: {},
+            });
+          }
+        }
+      }
+      
+      // Handle Excalidraw edit button click
+      if (target.closest('.cb-excalidraw-edit-btn')) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Find the block wrapper (not the inner .cb-excalidraw element)
+        const blockWrapper = target.closest('.cb-block') as HTMLElement;
+        if (blockWrapper) {
+          const blockId = blockWrapper.getAttribute('data-block-id');
+          if (blockId) {
+            // Get the inner excalidraw element to read stored data
+            const excalidrawElement = blockWrapper.querySelector('.cb-excalidraw') as HTMLElement;
+            if (!excalidrawElement) return;
+            
+            // Get stored Excalidraw data
+            let initialElements: any[] = [];
+            let initialAppState: any = {};
+            
+            try {
+              const elementsStr = excalidrawElement.getAttribute('data-excalidraw-elements');
+              if (elementsStr) {
+                initialElements = JSON.parse(elementsStr);
+              }
+            } catch (err) {
+              console.warn('Failed to parse Excalidraw elements:', err);
+              // IMPROVED (Bug #6): Better error feedback
+              console.error('Excalidraw data may be corrupted. Please try creating a new drawing.');
+            }
+            
+            try {
+              const appStateStr = excalidrawElement.getAttribute('data-excalidraw-appstate');
+              if (appStateStr) {
+                initialAppState = JSON.parse(appStateStr);
+              }
+            } catch (err) {
+              console.warn('Failed to parse Excalidraw appState:', err);
+            }
+            
+            setExcalidrawModal({
+              isOpen: true,
+              blockId,
+              initialElements,
+              initialAppState,
+            });
+          }
+        }
+      }
+    };
+    
+    const handleKeydown = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const keyEvent = e as KeyboardEvent;
+      
+      if (target.classList.contains('cb-video-url-input') && keyEvent.key === 'Enter') {
+        keyEvent.preventDefault();
         const input = target as HTMLInputElement;
         const url = input.value.trim();
         if (url) {
@@ -1431,8 +1561,8 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
       
       // Handle image URL input
-      if (target.classList.contains('cb-image-url-input') && e.key === 'Enter') {
-        e.preventDefault();
+      if (target.classList.contains('cb-image-url-input') && keyEvent.key === 'Enter') {
+        keyEvent.preventDefault();
         const input = target as HTMLInputElement;
         const url = input.value.trim();
         if (url) {
@@ -1481,10 +1611,26 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-    });
+    };
     
-    // Handle callout type selector clicks
-    container.addEventListener('click', (e) => {
+    // Handle paste in image/video URL inputs
+    const handleInputPaste = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const pasteEvent = e as ClipboardEvent;
+      
+      console.log('🎯 DOM handleInputPaste triggered:', {
+        tagName: target.tagName,
+        className: target.className,
+        hasClipboardData: !!pasteEvent.clipboardData,
+        clipboardText: pasteEvent.clipboardData?.getData('text/plain')?.substring(0, 50)
+      });
+      
+      // Critical: DO NOTHING - let the browser handle paste naturally
+      // Don't call preventDefault, don't call stopPropagation
+      // Just let the input field work normally
+    };
+    
+    const handleClickCallout = (e: Event) => {
       const typeButton = (e.target as HTMLElement).closest('.cb-callout-type-selector button[data-type]') as HTMLElement;
       if (typeButton) {
         e.preventDefault();
@@ -1497,9 +1643,26 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           emitChange();
         }
       }
-    });
+    };
     
-  }, [handleImageUpload, saveToHistory, emitChange]);
+    // Add event listeners
+    container.addEventListener('change', handleChange);
+    container.addEventListener('click', handleClickMain);
+    container.addEventListener('keydown', handleKeydown);
+    container.addEventListener('click', handleClickCallout);
+    container.addEventListener('paste', handleInputPaste, true); // Use capture phase to intercept paste before it bubbles
+    
+    // CRITICAL FIX: Cleanup function to remove all event listeners
+    return () => {
+      if (container) {
+        container.removeEventListener('change', handleChange);
+        container.removeEventListener('click', handleClickMain);
+        container.removeEventListener('keydown', handleKeydown);
+        container.removeEventListener('click', handleClickCallout);
+        container.removeEventListener('paste', handleInputPaste, true);
+      }
+    };
+  }, [handleImageUpload, saveToHistory, saveToHistoryImmediate, emitChange, setExcalidrawModal]);
 
   // Handle image resize
   useEffect(() => {
@@ -1514,6 +1677,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     let currentImg: HTMLImageElement | null = null;
     let currentWrapper: HTMLElement | null = null;
     let handleType: string | null = null;
+    let rafId: number | null = null; // PERFORMANCE FIX (Bug #7): RAF throttling
     
     const handleResizeStart = (e: MouseEvent) => {
       const handle = (e.target as HTMLElement).closest('.cb-image-resize-handle') as HTMLElement;
@@ -1539,33 +1703,49 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       saveToHistory();
     };
     
+    // PERFORMANCE FIX (Bug #7): Throttle resize with RAF to prevent excessive reflows
     const handleResizeMove = (e: MouseEvent) => {
       if (!isResizing || !currentImg || !handleType) return;
       
       e.preventDefault();
       
-      const diff = e.clientX - startX;
-      let newWidth: number;
+      // Cancel any pending RAF
+      if (rafId !== null) return;
       
-      // Handle direction affects how we calculate width
-      if (handleType === 'w' || handleType === 'sw' || handleType === 'nw') {
-        newWidth = startWidth - diff;
-      } else {
-        newWidth = startWidth + diff;
-      }
-      
-      // Constrain width between 50px and 100% of container
-      const containerWidth = container.offsetWidth - 100; // Account for padding
-      newWidth = Math.max(50, Math.min(newWidth, containerWidth));
-      
-      currentImg.style.width = `${newWidth}px`;
-      currentImg.style.height = 'auto';
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        
+        if (!currentImg || !isResizing) return;
+        
+        const diff = e.clientX - startX;
+        let newWidth: number;
+        
+        // Handle direction affects how we calculate width
+        if (handleType === 'w' || handleType === 'sw' || handleType === 'nw') {
+          newWidth = startWidth - diff;
+        } else {
+          newWidth = startWidth + diff;
+        }
+        
+        // Constrain width between 50px and 100% of container
+        const containerWidth = container.offsetWidth - 100; // Account for padding
+        newWidth = Math.max(50, Math.min(newWidth, containerWidth));
+        
+        currentImg.style.width = `${newWidth}px`;
+        currentImg.style.height = 'auto';
+      });
     };
     
     const handleResizeEnd = () => {
       if (!isResizing) return;
       
       isResizing = false;
+      
+      // PERFORMANCE FIX (Bug #7): Cancel pending RAF on resize end
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       
       if (currentWrapper) {
         currentWrapper.classList.remove('resizing');
@@ -1836,6 +2016,10 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         console.log('🗑️ Deleting', selectedBlockIds.size, 'selected blocks');
         saveToHistoryImmediate();
         
+        // Get the first selected block to know where to place the replacement paragraph
+        const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
+        const firstSelectedBlock = allBlocks.find(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
+        
         // Delete all selected blocks
         selectedBlockIds.forEach(blockId => {
           const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
@@ -1855,6 +2039,16 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             const editable = newBlock.querySelector('[contenteditable="true"]') as HTMLElement;
             editable?.focus();
           }, 0);
+        } else if (firstSelectedBlock) {
+          // Focus the block that's now in the position of the first deleted block
+          // This could be the next block or the previous block
+          const blockAfterDeletion = firstSelectedBlock.parentElement?.querySelector('.cb-block');
+          if (blockAfterDeletion) {
+            setTimeout(() => {
+              const editable = blockAfterDeletion.querySelector('[contenteditable="true"]') as HTMLElement;
+              editable?.focus();
+            }, 0);
+          }
         }
         
         updateState();
@@ -2052,6 +2246,81 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
     }
 
+    // Tab key in lists - indent/outdent
+    if (e.key === 'Tab' && (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList')) {
+      e.preventDefault();
+      
+      const li = target.closest('li');
+      if (!li) return;
+      
+      saveToHistoryImmediate(); // Use immediate save for structural change
+      
+      if (e.shiftKey) {
+        // Shift+Tab: Outdent
+        const parentList = li.parentElement as HTMLElement;
+        const isNested = parentList?.classList.contains('cb-nested-list');
+        
+        if (isNested) {
+          // Move item to parent list
+          const parentLi = parentList.parentElement as HTMLElement;
+          const grandparentList = parentLi?.parentElement as HTMLElement;
+          
+          if (grandparentList) {
+            grandparentList.insertBefore(li, parentLi.nextSibling);
+            
+            // Remove empty nested list
+            if (parentList.children.length === 0) {
+              parentList.remove();
+            }
+            
+            // Focus the moved item
+            const focusTarget = blockType === 'checkList' 
+              ? li.querySelector('.cb-checklist-content') as HTMLElement
+              : li;
+            if (focusTarget) {
+              setTimeout(() => {
+                focusTarget.focus();
+                moveCursorToEnd(focusTarget);
+              }, 0);
+            }
+          }
+        }
+      } else {
+        // Tab: Indent
+        const prevSibling = li.previousElementSibling as HTMLElement;
+        
+        if (prevSibling && prevSibling.tagName === 'LI') {
+          // Create or get nested list in previous sibling
+          let nestedList = prevSibling.querySelector(':scope > ul, :scope > ol') as HTMLElement;
+          
+          if (!nestedList) {
+            // Create new nested list
+            const listType = blockType === 'numberedList' ? 'ol' : 'ul';
+            nestedList = document.createElement(listType);
+            nestedList.className = `cb-list cb-nested-list`;
+            prevSibling.appendChild(nestedList);
+          }
+          
+          // Move current item to nested list
+          nestedList.appendChild(li);
+          
+          // Focus the moved item
+          const focusTarget = blockType === 'checkList' 
+            ? li.querySelector('.cb-checklist-content') as HTMLElement
+            : li;
+          if (focusTarget) {
+            setTimeout(() => {
+              focusTarget.focus();
+              moveCursorToEnd(focusTarget);
+            }, 0);
+          }
+        }
+      }
+      
+      emitChange();
+      return;
+    }
+
     // Tab key in code blocks - insert indentation
     if (e.key === 'Tab' && blockType === 'code') {
       e.preventDefault();
@@ -2134,6 +2403,62 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       return;
     }
 
+    // Shift+Enter in lists - create nested list item
+    if (e.key === 'Enter' && e.shiftKey && (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList')) {
+      e.preventDefault();
+      
+      const li = target.closest('li');
+      if (!li) return;
+      
+      saveToHistoryImmediate(); // Use immediate save for structural change
+      
+      // Create or get nested list
+      let nestedList = li.querySelector(':scope > ul, :scope > ol') as HTMLElement;
+      
+      if (!nestedList) {
+        // Create new nested list
+        const listType = blockType === 'numberedList' ? 'ol' : 'ul';
+        nestedList = document.createElement(listType);
+        nestedList.className = `cb-list cb-nested-list`;
+        li.appendChild(nestedList);
+      }
+      
+      // Create new list item
+      const newLi = document.createElement('li');
+      newLi.className = 'cb-list-item';
+      newLi.setAttribute('data-item-id', generateId());
+      
+      if (blockType === 'checkList') {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'cb-checklist-wrapper';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'cb-checkbox';
+        checkbox.setAttribute('tabindex', '-1');
+        
+        const contentSpan = document.createElement('span');
+        contentSpan.className = 'cb-checklist-content';
+        contentSpan.setAttribute('contenteditable', 'true');
+        
+        wrapper.appendChild(checkbox);
+        wrapper.appendChild(contentSpan);
+        newLi.appendChild(wrapper);
+        
+        nestedList.appendChild(newLi);
+        contentSpan.focus();
+        moveCursorToStart(contentSpan);
+      } else {
+        newLi.setAttribute('contenteditable', 'true');
+        nestedList.appendChild(newLi);
+        newLi.focus();
+        moveCursorToStart(newLi);
+      }
+      
+      emitChange();
+      return;
+    }
+
     // Enter key
     if (e.key === 'Enter' && !e.shiftKey) {
       // Don't split code blocks on enter
@@ -2204,7 +2529,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         
         // Non-empty item - create new list item
         e.preventDefault();
-        saveToHistory();
+        saveToHistoryImmediate(); // Use immediate save for structural change
         
         const selection = window.getSelection();
         const range = selection?.getRangeAt(0);
@@ -2379,6 +2704,177 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     handleUndo, handleRedo, onSave, getHTML
   ]);
 
+  /**
+   * Apply hashtag styling to text content
+   * Detects #word patterns (no spaces allowed) and wraps them in styled spans
+   */
+  const applyHashtagStyling = useCallback((element: HTMLElement) => {
+    if (!element || element.getAttribute('contenteditable') !== 'true') return;
+    
+    // Save cursor position before modification
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    
+    const range = selection.getRangeAt(0);
+    const cursorNode = range.startContainer;
+    const cursorOffset = range.startOffset;
+    
+    // Track the position relative to the element
+    let charCount = 0;
+    let savedOffset = -1;
+    
+    const countCharsBeforeCursor = (node: Node): boolean => {
+      if (node === cursorNode) {
+        savedOffset = charCount + cursorOffset;
+        return true;
+      }
+      
+      if (node.nodeType === Node.TEXT_NODE) {
+        charCount += node.textContent?.length || 0;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        // For hashtag spans, count their text content
+        if (node instanceof HTMLElement && node.classList.contains('cb-hashtag')) {
+          charCount += node.textContent?.length || 0;
+          return false;
+        }
+        // Recurse into children
+        for (let i = 0; i < node.childNodes.length; i++) {
+          if (countCharsBeforeCursor(node.childNodes[i])) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    };
+    
+    countCharsBeforeCursor(element);
+    
+    // Get plain text content (excluding existing hashtag spans)
+    const getText = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent || '';
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        // Skip code, links, and existing hashtags
+        if (el.tagName === 'CODE' || el.tagName === 'A' || el.classList.contains('cb-hashtag')) {
+          return el.textContent || '';
+        }
+        let text = '';
+        for (let i = 0; i < node.childNodes.length; i++) {
+          text += getText(node.childNodes[i]);
+        }
+        return text;
+      }
+      return '';
+    };
+    
+    const plainText = getText(element);
+    
+    // Match hashtags: # followed by alphanumeric/underscore characters (no spaces)
+    // Hashtag ends at space, punctuation, or end of string
+    const hashtagRegex = /#[\w\d_]+(?=\s|[.,!?;:]|$)/g;
+    const matches = Array.from(plainText.matchAll(hashtagRegex));
+    
+    if (matches.length === 0) {
+      // No hashtags found, remove any existing hashtag styling
+      const existingHashtags = element.querySelectorAll('.cb-hashtag');
+      existingHashtags.forEach(hashtagSpan => {
+        const text = document.createTextNode(hashtagSpan.textContent || '');
+        hashtagSpan.parentNode?.replaceChild(text, hashtagSpan);
+      });
+      return;
+    }
+    
+    // Build new HTML with hashtag spans
+    const fragments: (string | HTMLElement)[] = [];
+    let lastIndex = 0;
+    
+    matches.forEach(match => {
+      const matchText = match[0];
+      const index = match.index!;
+      
+      // Add text before hashtag
+      if (index > lastIndex) {
+        fragments.push(plainText.substring(lastIndex, index));
+      }
+      
+      // Create hashtag span
+      const hashtagSpan = document.createElement('span');
+      hashtagSpan.className = 'cb-hashtag';
+      hashtagSpan.textContent = matchText;
+      fragments.push(hashtagSpan);
+      
+      lastIndex = index + matchText.length;
+    });
+    
+    // Add remaining text
+    if (lastIndex < plainText.length) {
+      fragments.push(plainText.substring(lastIndex));
+    }
+    
+    // Clear element and append fragments
+    element.innerHTML = '';
+    fragments.forEach(fragment => {
+      if (typeof fragment === 'string') {
+        element.appendChild(document.createTextNode(fragment));
+      } else {
+        element.appendChild(fragment);
+      }
+    });
+    
+    // Restore cursor position
+    if (savedOffset >= 0) {
+      try {
+        let currentOffset = 0;
+        let targetNode: Node | null = null;
+        let targetOffset = 0;
+        
+        const findCursorPosition = (node: Node): boolean => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const nodeLength = node.textContent?.length || 0;
+            if (currentOffset + nodeLength >= savedOffset) {
+              targetNode = node;
+              targetOffset = savedOffset - currentOffset;
+              return true;
+            }
+            currentOffset += nodeLength;
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node instanceof HTMLElement && node.classList.contains('cb-hashtag')) {
+              const nodeLength = node.textContent?.length || 0;
+              if (currentOffset + nodeLength >= savedOffset) {
+                // Place cursor after the hashtag span
+                targetNode = node.nextSibling || node.parentNode;
+                targetOffset = 0;
+                return true;
+              }
+              currentOffset += nodeLength;
+              return false;
+            }
+            
+            for (let i = 0; i < node.childNodes.length; i++) {
+              if (findCursorPosition(node.childNodes[i])) {
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+        
+        if (findCursorPosition(element) && targetNode) {
+          const newRange = document.createRange();
+          newRange.setStart(targetNode, targetOffset);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        }
+      } catch (error) {
+        console.warn('Failed to restore cursor:', error);
+      }
+    }
+  }, []);
+
   // Handle input
   const handleInput = useCallback((e?: React.FormEvent<HTMLDivElement>) => {
     // Check for markdown shortcuts
@@ -2393,26 +2889,68 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         const text = target.textContent || '';
         
         // Check for markdown patterns at the start of the block
-        // Pattern: "- " for bullet list
-        if (text === '- ' || text === '* ') {
+        // Pattern: "- " or "* " for bullet list (with or without content)
+        if (text.startsWith('- ') || text.startsWith('* ')) {
+          const content = text.startsWith('- ') ? text.slice(2) : text.slice(2);
           target.textContent = '';
-          transformBlockType(blockId, 'bulletList');
+          transformBlockType(blockId, 'bulletList', { content });
           return;
         }
         
-        // Pattern: "1. " for numbered list
-        if (/^\d+\.\s$/.test(text)) {
+        // Pattern: "1. " (or any number + period + space) for numbered list (with or without content)
+        const numberedMatch = text.match(/^(\d+)\.\s(.*)$/);
+        if (numberedMatch) {
+          const content = numberedMatch[2] || '';
           target.textContent = '';
-          transformBlockType(blockId, 'numberedList');
+          transformBlockType(blockId, 'numberedList', { content });
           return;
         }
         
-        // Pattern: "> " for quote
-        if (text === '> ') {
+        // Pattern: "[] " for checklist (with or without content)
+        if (text.startsWith('[] ')) {
+          const content = text.slice(3);
           target.textContent = '';
-          transformBlockType(blockId, 'quote');
+          transformBlockType(blockId, 'checkList', { content });
           return;
         }
+        
+        // Pattern: "> " for quote (with or without content)
+        if (text.startsWith('> ')) {
+          const content = text.slice(2);
+          target.textContent = '';
+          transformBlockType(blockId, 'quote', { content });
+          return;
+        }
+        
+        // Pattern: "# " for heading 1 (with or without content)
+        if (text.startsWith('# ') && !text.startsWith('## ')) {
+          const content = text.slice(2);
+          target.textContent = '';
+          transformBlockType(blockId, 'heading', { level: 1, content });
+          return;
+        }
+        
+        // Pattern: "## " for heading 2 (with or without content)
+        if (text.startsWith('## ') && !text.startsWith('### ')) {
+          const content = text.slice(3);
+          target.textContent = '';
+          transformBlockType(blockId, 'heading', { level: 2, content });
+          return;
+        }
+        
+        // Pattern: "### " for heading 3 (with or without content)
+        if (text.startsWith('### ')) {
+          const content = text.slice(4);
+          target.textContent = '';
+          transformBlockType(blockId, 'heading', { level: 3, content });
+          return;
+        }
+      }
+      
+      // Apply hashtag styling to any block type (after markdown shortcuts are processed)
+      if (e?.target instanceof HTMLElement) {
+        const target = e.target;
+        applyHashtagStyling(target);
       }
     }
     
@@ -2501,6 +3039,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const clickedContentEditable = target.closest('[contenteditable="true"]');
     const clickedBlock = target.closest('.cb-block');
     const clickedDragHandle = target.closest('.cb-block-drag');
+    const clickedInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
     
     // Clear selection if:
     // 1. Not holding Shift (multi-select modifier)
@@ -2513,8 +3052,9 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       setSelectedBlockIds(emptySet);
     }
     
-    // If not clicking on a contenteditable, focus the container
-    if (!clickedContentEditable) {
+    // If not clicking on a contenteditable or input field, focus the container
+    // CRITICAL FIX: Don't steal focus from INPUT/TEXTAREA elements
+    if (!clickedContentEditable && !clickedInput) {
       // Focus the container to enable keyboard shortcuts
       containerRef.current.focus();
     }
@@ -2644,6 +3184,24 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (readOnly) return;
     
+    // Allow default paste behavior for input fields (like image URL input, video URL input, etc.)
+    const target = e.target as HTMLElement;
+    
+    console.log('🔍 PASTE EVENT DEBUG:', {
+      tagName: target.tagName,
+      className: target.className,
+      isInput: target.tagName === 'INPUT',
+      isTextarea: target.tagName === 'TEXTAREA',
+    });
+    
+    // Check if pasting into an input or textarea element
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+      console.log('✅ Allowing paste in input field:', target.className);
+      // DO NOT call preventDefault - let browser handle it
+      return;
+    }
+    
+    console.log('🚫 Preventing default paste (not an input field)');
     e.preventDefault();
     saveToHistoryImmediate(); // Use immediate save for paste operation
     
@@ -2908,6 +3466,21 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         charCount={editorState.charCount}
         readingTime={calculateReadingTime(editorState.wordCount)}
         selectedBlockCount={selectedBlockIds.size}
+        darkMode={darkMode}
+      />
+
+      {/* Contextual Selection Toolbar */}
+      {editorInstance && (
+        <SelectionToolbar editor={editorInstance} darkMode={darkMode} />
+      )}
+
+      {/* Excalidraw Modal */}
+      <ExcalidrawModal
+        isOpen={excalidrawModal.isOpen}
+        onClose={handleExcalidrawClose}
+        onSave={handleExcalidrawSave}
+        initialElements={excalidrawModal.initialElements}
+        initialAppState={excalidrawModal.initialAppState}
         darkMode={darkMode}
       />
     </div>
