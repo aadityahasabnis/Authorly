@@ -189,6 +189,14 @@ export function setImageSrc(figure: HTMLElement, src: string, alt = ''): void {
     const placeholder = container.querySelector('.cb-image-placeholder');
     if (placeholder) placeholder.remove();
 
+    // Remove uploading UI (spinner, progress bar)
+    const uploadingUI = container.querySelector('.cb-image-uploading');
+    if (uploadingUI) uploadingUI.remove();
+
+    // Remove error UI if any
+    const errorUI = container.querySelector('.cb-image-error');
+    if (errorUI) errorUI.remove();
+
     // Create resizable wrapper
     const resizableWrapper = document.createElement('div');
     resizableWrapper.className = 'cb-image-resizable';

@@ -1,25 +1,25 @@
 # Bugs
 ### Editor Bugs:
 
-1. I cant see the accordion button in the toolbar .. -> I cant add the accordion in the editor _. but I can add through the / command popover _. see why the toolbar does not have the accordion button
+1 ✅ I cant see the accordion button in the toolbar .. -> I cant add the accordion in the editor _. but I can add through the / command popover _. see why the toolbar does not have the accordion button
 
-2. the ctrl + A -> at first -> should select the block content -> after again ctrl + A (twice) -> should select all the blocks
+2.✅ the ctrl + A -> at first -> should select the block content -> after again ctrl + A (twice) -> should select all the blocks
 
-3. If we select the content in the editor and copy, it selects all the unwanted properties -> it should select -> what types of block is it -> and what is the content.. -> right now, its selecting the color, text, padding, the icons too.. that is not wanted.. -> and while pasting -> it should paste -> accurately which tyle of block / content it was and the content itself -> by creating new blocks -> at where the cursor is..-> very professionally -> keeping mind all the other text that exists..
+3. ✅ If we select the content in the editor and copy, it selects all the unwanted properties -> it should select -> what types of block is it -> and what is the content.. -> right now, its selecting the color, text, padding, the icons too.. that is not wanted.. -> and while pasting -> it should paste -> accurately which tyle of block / content it was and the content itself -> by creating new blocks -> at where the cursor is..-> very professionally -> keeping mind all the other text that exists..
 
-4. the ctrl + z -> undo is not working correctly -> ->  undo gets redirected to the first -> node /block in the editor -> and at the same time it updates all the values changed...-> in the editor -> the undo and the redu should be very very professionally build for the easiness -> in the editor usage
+4. ✅ the ctrl + z -> undo is not working correctly -> ->  undo gets redirected to the first -> node /block in the editor -> and at the same time it updates all the values changed...-> in the editor -> the undo and the redu should be very very professionally build for the easiness -> in the editor usage
 
 # TODO Implementations
 
-1. If we write the - and (space) then the bullet list should start like the markdown -> and same for the number list 1. (space) -> in the block and for the quote use the > (space) that will start the quote 
+1. ✅ If we write the - and (space) then the bullet list should start like the markdown -> and same for the number list 1. (space) -> in the block and for the quote use the > (space) that will start the quote 
 
-2. like there are various blocks -> I want the Date to be added in teh content -> like in the / command too and in the toolbar at top too -> that will add the date -> to where the cursor is.. -> when we click on the -> date in the toolbar -> it should have the option to select from {today, tomorrow, yesterday} -> by default it will be todays.. -> and in the editor -> the date will be shown differently -> like the inline code -> fully formatted date [Fri, 17 July 2024] like this -> and when hover on the date -> it should have the option to select any date what is wanted -> from the calender -> and the calender -> should follow our styling patterns very professionally.. 
+2. ✅ like there are various blocks -> I want the Date to be added in teh content -> like in the / command too and in the toolbar at top too -> that will add the date -> to where the cursor is.. -> when we click on the -> date in the toolbar -> it should have the option to select from {today, tomorrow, yesterday} -> by default it will be todays.. -> and in the editor -> the date will be shown differently -> like the inline code -> fully formatted date [Fri, 17 July 2024] like this -> and when hover on the date -> it should have the option to select any date what is wanted -> from the calender -> and the calender -> should follow our styling patterns very professionally.. 
 
-3. If we use #something -> in any where in the -> editor in any block or in any content -> then that #content should be styled differently -> in the light blue theme  -> like the inline code style -> but corners not that much rounded for the hashtag content ..
+3. ✅ If we use #something -> in any where in the -> editor in any block or in any content -> then that #content should be styled differently -> in the light blue theme  -> like the inline code style -> but corners not that much rounded for the hashtag content ..
 
-4. The image uploader and video uploader has bad UI's make the UI constant and minimal -> and very very professional -> 
+4. ✅ The image uploader and video uploader has bad UI's make the UI constant and minimal -> and very very professional -> 
 
-5. Table of Contents _> should have the prop of the px. -> go to the content -> for top - {some px} because the conetnt comes at below the navbar at top.. (by default keep some constant like the 5 px)
+5. (Dont implement this right now) Table of Contents _> should have the prop of the px. -> go to the content -> for top - {some px} because the conetnt comes at below the navbar at top.. (by default keep some constant like the 5 px)
 ​
 6. ✅ download pdf option -> in the editor -> that will download the content into -> pdf -> in our styles -> with ------------ but if its going to make the package bulky then build our own pdf maker -> in our styles -> lightweight
 

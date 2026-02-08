@@ -3,6 +3,8 @@
  * Pure HTML output, DOM-first architecture
  */
 
+import type { UploadConfig, UploadResult, UploadProgress } from '../types/upload';
+
 // ============================================
 // Block Types
 // ============================================
@@ -424,6 +426,25 @@ export interface ContentBlocksEditorProps {
   onBlur?: () => void;
   /** Editor ready callback */
   onReady?: (editor: EditorInstance) => void;
+  
+  // ============================================
+  // Upload Configuration (NEW)
+  // ============================================
+  
+  /** Image upload configuration (Cloudinary, S3, or custom) */
+  imageUploadConfig?: UploadConfig;
+  
+  /** Called when image upload starts */
+  onUploadStart?: (filename: string) => void;
+  
+  /** Called when image upload succeeds */
+  onUploadSuccess?: (result: UploadResult) => void;
+  
+  /** Called when image upload fails */
+  onUploadError?: (error: Error) => void;
+  
+  /** Called to track upload progress */
+  onUploadProgress?: (progress: UploadProgress) => void;
 }
 
 export interface ToolbarProps {

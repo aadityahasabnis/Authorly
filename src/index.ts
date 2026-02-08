@@ -9,7 +9,7 @@
 import './styles/editor.css';
 
 // Main components
-export { ContentBlocksEditor, type EditorRef } from './components/Editor';
+export { ContentBlocksEditor, type EditorRef, type GetHTMLOptions } from './components/Editor';
 export { ContentBlocksRenderer, type ContentBlocksRendererProps } from './components/Renderer';
 export { TableOfContents, parseHeadings, type TocItem, type TableOfContentsProps } from './components/TableOfContents';
 export { Toolbar } from './components/Toolbar';
@@ -50,6 +50,13 @@ export * from './blocks';
 
 // Utilities
 export * from './utils/helpers';
+export * from './utils/uploadConfigHelpers';
+
+// Upload services
+export { ImageUploadService } from './services/uploadService';
+export { uploadToCloudinary, optimizeCloudinaryUrl, generateCloudinarySrcset } from './services/cloudinaryUpload';
+export { uploadToS3, generateS3Url, generateCloudFrontUrl } from './services/s3Upload';
+export * from './types/upload';
 
 // Paste handling
 export { sanitizeHtml, sanitizePaste, convertPlainTextToHtml, normalizeHtml } from './paste/sanitize';

@@ -49,6 +49,21 @@
 
 ---
 
+## Features
+
+- **Clean HTML Output** - Pure semantic HTML, no proprietary formats
+- **13+ Block Types** - Paragraphs, headings, lists, code, tables, images, videos, and more
+- **Cloud Image Uploads** - Built-in support for Cloudinary, AWS S3, and custom handlers
+- **Dark Mode** - Beautiful dark theme out of the box
+- **TypeScript Ready** - Full type definitions included
+- **Lightweight** - Only ~30kb gzipped
+- **Keyboard Shortcuts** - Efficient editing with familiar shortcuts
+- **Table of Contents** - Auto-generate navigation from headings
+- **Accessibility** - WCAG compliant with ARIA labels
+- **Zero Dependencies** - Only React as a peer dependency
+
+---
+
 ## Installation
 
 ```bash
@@ -198,6 +213,11 @@ import { TableOfContents, ContentBlocksRenderer } from 'authorly-editor';
 | `spellCheck` | `boolean` | `true` | Enable spell check |
 | `className` | `string` | `''` | Custom class name |
 | `style` | `CSSProperties` | - | Custom styles |
+| `imageUploadConfig` | `UploadConfig` | - | Cloud upload configuration (Cloudinary, S3, custom) |
+| `onUploadStart` | `(file: File) => void` | - | Called when upload starts |
+| `onUploadSuccess` | `(result: UploadResult) => void` | - | Called when upload succeeds |
+| `onUploadError` | `(error: Error) => void` | - | Called when upload fails |
+| `onUploadProgress` | `(progress: UploadProgress) => void` | - | Called during upload progress |
 
 ### EditorRef Methods
 
@@ -332,6 +352,37 @@ function DocsPage({ content }) {
   );
 }
 ```
+
+### Image Uploads with Cloudinary
+
+```tsx
+import { ContentBlocksEditor, createCloudinaryConfig } from 'authorly-editor';
+
+function Editor() {
+  const [content, setContent] = useState('');
+
+  // Configure Cloudinary upload
+  const uploadConfig = createCloudinaryConfig({
+    cloudName: 'your-cloud-name',
+    uploadPreset: 'your-upload-preset',
+    folder: 'blog-images',
+    maxSizeMB: 5,
+  });
+
+  return (
+    <ContentBlocksEditor
+      initialContent={content}
+      onChange={setContent}
+      imageUploadConfig={uploadConfig}
+      onUploadSuccess={(result) => {
+        console.log('Image uploaded:', result.url);
+      }}
+    />
+  );
+}
+```
+
+See [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-uploads) for more examples including S3 and custom backends.
 
 ### Dark Mode Support
 
@@ -498,14 +549,20 @@ Not built-in. For real-time collaboration, you'd need to integrate with a servic
 <details>
 <summary><strong>How do I handle image uploads?</strong></summary>
 
-The editor supports pasting images (as base64) and entering URLs. For server uploads, handle it in your app:
+Authorly includes built-in support for cloud uploads! Configure Cloudinary, S3, or custom handlers:
 
 ```tsx
-const handleImageUpload = async (file: File) => {
-  const url = await uploadToS3(file);
-  editorRef.current?.insertBlock('image', { src: url });
-};
+import { ContentBlocksEditor, createCloudinaryConfig } from 'authorly-editor';
+
+const uploadConfig = createCloudinaryConfig({
+  cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  uploadPreset: process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
+});
+
+<ContentBlocksEditor imageUploadConfig={uploadConfig} />
 ```
+
+See the [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-uploads) for Cloudinary, S3, and custom upload examples.
 </details>
 
 ---

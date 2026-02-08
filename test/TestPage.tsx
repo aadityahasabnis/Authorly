@@ -4,6 +4,8 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { ContentBlocksEditor, type EditorRef } from '../src';
+import { createCloudinaryConfig, createS3Config } from '../src/utils/uploadConfigHelpers';
+import type { UploadResult, UploadProgress } from '../src/types/upload';
 import '../src/styles/editor.css';
 
 // Table of Contents Item type
@@ -352,6 +354,66 @@ export const TestPage: React.FC = () => {
   const [showOutput, setShowOutput] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showToc, setShowToc] = useState(true);
+  
+  // Upload state
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState('');
+  const [lastUploadedUrl, setLastUploadedUrl] = useState('');
+
+  // Configure image upload from environment variables
+  // Supports both Cloudinary and AWS S3
+  const uploadConfig = useMemo(() => {
+    // Check for upload provider selection
+    const provider = import.meta.env.VITE_UPLOAD_PROVIDER || 'cloudinary'; // 'cloudinary' | 's3'
+    
+    if (provider === 's3') {
+      // AWS S3 Configuration
+      const region = import.meta.env.VITE_AWS_REGION;
+      const bucket = import.meta.env.VITE_AWS_BUCKET;
+      const accessKeyId = import.meta.env.VITE_AWS_ACCESS_KEY_ID;
+      const secretAccessKey = import.meta.env.VITE_AWS_SECRET_ACCESS_KEY;
+      
+      if (!region || !bucket || !accessKeyId || !secretAccessKey) {
+        console.log('⚠️ AWS S3 not configured - image upload will use base64 fallback');
+        console.log('Add to .env: VITE_AWS_REGION, VITE_AWS_BUCKET, VITE_AWS_ACCESS_KEY_ID, VITE_AWS_SECRET_ACCESS_KEY');
+        return undefined;
+      }
+      
+      console.log('✅ AWS S3 upload configured');
+      return createS3Config({
+        region,
+        bucket,
+        accessKeyId,
+        secretAccessKey,
+        prefix: import.meta.env.VITE_AWS_PREFIX || 'authorly-test',
+        apiEndpoint: import.meta.env.VITE_AWS_API_ENDPOINT || '/api/s3/presigned-url',
+        cloudFrontDomain: import.meta.env.VITE_AWS_CLOUDFRONT_DOMAIN,
+        maxSizeMB: Number(import.meta.env.VITE_MAX_UPLOAD_SIZE_MB) || 10,
+      });
+    } else {
+      // Cloudinary Configuration (default)
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+      
+      if (!cloudName || !uploadPreset) {
+        console.log('⚠️ Cloudinary not configured - image upload will use base64 fallback');
+        console.log('Add to .env: VITE_CLOUDINARY_CLOUD_NAME, VITE_CLOUDINARY_UPLOAD_PRESET');
+        return undefined;
+      }
+
+      console.log('✅ Cloudinary upload configured');
+      return createCloudinaryConfig({
+        cloudName,
+        uploadPreset,
+        folder: import.meta.env.VITE_CLOUDINARY_FOLDER || 'authorly-test',
+        maxSizeMB: Number(import.meta.env.VITE_MAX_UPLOAD_SIZE_MB) || 10,
+      });
+    }
+  }, []);
+
+  const isUploadConfigured = uploadConfig !== undefined;
+  const uploadProvider = uploadConfig ? (uploadConfig.provider === 's3' ? 'AWS S3' : uploadConfig.provider === 'cloudinary' ? 'Cloudinary' : 'Custom') : 'Base64 (Local)';
 
   // Parse TOC from HTML output
   const tocItems = useMemo(() => parseHeadings(htmlOutput), [htmlOutput]);
@@ -401,12 +463,42 @@ export const TestPage: React.FC = () => {
     }
   }, []);
 
+  // Upload callbacks
+  const handleUploadStart = useCallback((file: File) => {
+    setUploadStatus('uploading');
+    setUploadProgress(0);
+    setUploadMessage(`Uploading ${file.name}...`);
+  }, []);
+
+  const handleUploadProgress = useCallback((progress: UploadProgress) => {
+    setUploadProgress(Math.round(progress.percent));
+  }, []);
+
+  const handleUploadSuccess = useCallback((result: UploadResult) => {
+    setUploadStatus('success');
+    setUploadMessage('Image uploaded successfully!');
+    setLastUploadedUrl(result.url);
+    setTimeout(() => setUploadStatus('idle'), 3000);
+  }, []);
+
+  const handleUploadError = useCallback((error: Error) => {
+    setUploadStatus('error');
+    setUploadMessage(`Upload failed: ${error.message}`);
+    setTimeout(() => setUploadStatus('idle'), 5000);
+  }, []);
+
   return (
     <div style={{
       minHeight: '100vh',
       background: darkMode ? '#0f172a' : '#f8fafc',
       transition: 'background 0.3s ease'
     }}>
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       <PreviewStyles darkMode={darkMode} />
 
       {/* Header */}
@@ -601,6 +693,104 @@ export const TestPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Upload Status Indicator */}
+            {uploadStatus !== 'idle' && (
+              <div style={{
+                padding: '0.75rem 1rem',
+                marginBottom: '1rem',
+                borderRadius: '0.5rem',
+                background: uploadStatus === 'uploading' ? (darkMode ? 'rgba(59, 130, 246, 0.1)' : '#eff6ff') :
+                           uploadStatus === 'success' ? (darkMode ? 'rgba(16, 185, 129, 0.1)' : '#f0fdf4') :
+                           (darkMode ? 'rgba(239, 68, 68, 0.1)' : '#fef2f2'),
+                border: `1px solid ${uploadStatus === 'uploading' ? (darkMode ? '#3b82f6' : '#bfdbfe') :
+                                    uploadStatus === 'success' ? (darkMode ? '#10b981' : '#bbf7d0') :
+                                    (darkMode ? '#ef4444' : '#fecaca')}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+              }}>
+                {uploadStatus === 'uploading' && (
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    border: '2px solid #3b82f6',
+                    borderTopColor: 'transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 0.8s linear infinite',
+                  }} />
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontSize: '0.875rem',
+                    fontWeight: 500,
+                    color: uploadStatus === 'uploading' ? '#3b82f6' :
+                           uploadStatus === 'success' ? '#10b981' : '#ef4444',
+                    marginBottom: uploadStatus === 'uploading' ? '0.25rem' : 0,
+                  }}>
+                    {uploadMessage}
+                  </div>
+                  {uploadStatus === 'uploading' && (
+                    <div style={{
+                      height: '4px',
+                      background: darkMode ? '#334155' : '#e5e7eb',
+                      borderRadius: '2px',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${uploadProgress}%`,
+                        background: '#3b82f6',
+                        transition: 'width 0.3s ease',
+                      }} />
+                    </div>
+                  )}
+                  {uploadStatus === 'success' && lastUploadedUrl && (
+                    <div style={{
+                      fontSize: '0.75rem',
+                      color: darkMode ? '#94a3b8' : '#64748b',
+                      marginTop: '0.25rem',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      URL: {lastUploadedUrl}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Upload Configuration Status */}
+            <div style={{
+              padding: '0.75rem 1rem',
+              marginBottom: '1rem',
+              borderRadius: '0.5rem',
+              background: isUploadConfigured ? 
+                (darkMode ? 'rgba(16, 185, 129, 0.1)' : '#f0fdf4') :
+                (darkMode ? 'rgba(245, 158, 11, 0.1)' : '#fffbeb'),
+              border: `1px solid ${isUploadConfigured ? 
+                (darkMode ? '#10b981' : '#bbf7d0') :
+                (darkMode ? '#f59e0b' : '#fde68a')}`,
+              fontSize: '0.875rem',
+            }}>
+              <div style={{
+                fontWeight: 500,
+                color: isUploadConfigured ? '#10b981' : '#f59e0b',
+                marginBottom: '0.25rem',
+              }}>
+                {isUploadConfigured ? `✓ ${uploadProvider} Upload Enabled` : '⚠ Cloud Upload Not Configured'}
+              </div>
+              <div style={{ color: darkMode ? '#94a3b8' : '#64748b', fontSize: '0.8125rem' }}>
+                {isUploadConfigured ? 
+                  uploadConfig.provider === 's3' ?
+                    `Images will upload to AWS S3 bucket: ${uploadConfig.s3?.bucket}${uploadConfig.s3?.cloudFrontDomain ? ' (CloudFront CDN)' : ''}` :
+                  uploadConfig.provider === 'cloudinary' ?
+                    `Images will upload to Cloudinary. Folder: ${import.meta.env.VITE_CLOUDINARY_FOLDER || 'authorly-test'}` :
+                    'Images will upload using custom upload handler.' :
+                  'Add credentials to .env file to enable cloud uploads. Using base64 fallback.'}
+              </div>
+            </div>
+
             <ContentBlocksEditor
               ref={editorRef}
               initialContent={SAMPLE_CONTENT}
@@ -612,6 +802,11 @@ export const TestPage: React.FC = () => {
               spellCheck={true}
               onChange={handleChange}
               onSave={handleSave}
+              imageUploadConfig={uploadConfig}
+              onUploadStart={handleUploadStart}
+              onUploadProgress={handleUploadProgress}
+              onUploadSuccess={handleUploadSuccess}
+              onUploadError={handleUploadError}
               style={{
                 minHeight: '500px',
                 maxHeight: 'calc(100vh - 200px)',

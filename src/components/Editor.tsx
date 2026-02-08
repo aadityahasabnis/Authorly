@@ -52,9 +52,23 @@ import { addTableRow, addTableColumn, deleteTableRow, deleteTableColumn, getFocu
 import { setImageSrc, createImageFromFile, setImageAlign, createCropModal } from '../blocks/image';
 import { setVideoSrc } from '../blocks/video';
 import { setCalloutType } from '../blocks/callout';
+import { ImageUploadService } from '../services/uploadService';
+import type { UploadProgress } from '../types/upload';
+import { optimizeCloudinaryUrl, generateCloudinarySrcset } from '../services/cloudinaryUpload';
+
+export interface GetHTMLOptions {
+  /** Remove editor UI elements like controls (default: true) */
+  stripEditorUI?: boolean;
+  /** Remove data-block-id attributes (default: true) */
+  stripDataAttributes?: boolean;
+  /** Add Cloudinary optimization params (default: true) */
+  optimizeImages?: boolean;
+  /** Generate responsive srcset for Cloudinary images (default: true) */
+  addResponsiveImages?: boolean;
+}
 
 export interface EditorRef {
-  getHTML: () => string;
+  getHTML: (options?: GetHTMLOptions) => string;
   setHTML: (html: string) => void;
   getText: () => string;
   focus: () => void;
@@ -85,13 +99,18 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     onFocus,
     onBlur,
     onReady,
+    imageUploadConfig,
+    onUploadStart,
+    onUploadSuccess,
+    onUploadError,
+    onUploadProgress,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const initialContentLoadedRef = useRef(false); // Track if initial content was loaded
   const saveToHistoryImmediateRef = useRef<(() => void) | null>(null); // Ref for history save function
-  
+
   // Enhanced history with cursor position tracking
   interface HistoryEntry {
     html: string;
@@ -102,7 +121,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     } | null;
     selectedBlockIds: string[]; // Track multi-block selection
   }
-  
+
   const undoStackRef = useRef<HistoryEntry[]>([]); // Enhanced undo stack
   const redoStackRef = useRef<HistoryEntry[]>([]); // Enhanced redo stack
   const selectedBlockIdsRef = useRef<Set<string>>(new Set()); // Ref for current selection (avoids closure issues)
@@ -137,6 +156,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     initialAppState: {},
   });
 
+  // Initialize upload service if config provided
+  const uploadService = useMemo(() =>
+    imageUploadConfig
+      ? new ImageUploadService(imageUploadConfig)
+      : null,
+    [imageUploadConfig]
+  );
+
   // Register all blocks on mount
   useEffect(() => {
     allBlocks.forEach(block => {
@@ -160,14 +187,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     let rafId: number | null = null;
     let lastUpdateTime = 0;
     const MIN_UPDATE_INTERVAL = 100; // Minimum 100ms between updates (10 FPS max)
-    
+
     const handleSelectionChange = () => {
       // Throttle using RAF + time-based check for better performance
       if (rafId) return; // Already scheduled
-      
+
       const now = Date.now();
       const timeSinceLastUpdate = now - lastUpdateTime;
-      
+
       if (timeSinceLastUpdate < MIN_UPDATE_INTERVAL) {
         // Schedule for later if updating too frequently
         rafId = requestAnimationFrame(() => {
@@ -205,12 +232,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Add visual feedback for selected blocks
   useEffect(() => {
     if (!contentRef.current) return;
-    
+
     // Remove all selection classes
     contentRef.current.querySelectorAll('.cb-block').forEach(block => {
       block.classList.remove('cb-block-selected');
     });
-    
+
     // Add selection class to selected blocks
     selectedBlockIds.forEach(blockId => {
       const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
@@ -220,10 +247,64 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     });
   }, [selectedBlockIds]);
 
+  // Helper: Update image placeholders with upload service indicator
+  const updateImagePlaceholders = useCallback((container: HTMLElement) => {
+    const placeholders = container.querySelectorAll('.cb-image-placeholder-hint');
+    
+    placeholders.forEach(hint => {
+      // Don't update if already has indicator
+      if (hint.querySelector('.cb-upload-service-badge')) return;
+      
+      // Determine upload service
+      let serviceName = 'Base64 (Local)';
+      let serviceColor = '#f59e0b'; // Amber/warning color
+      let serviceIcon = '💾';
+      
+      if (uploadService) {
+        const config = imageUploadConfig;
+        if (config?.provider === 'cloudinary') {
+          serviceName = 'Cloudinary';
+          serviceColor = '#3448c5'; // Cloudinary blue
+          serviceIcon = '☁️';
+        } else if (config?.provider === 's3') {
+          serviceName = 'AWS S3';
+          serviceColor = '#ff9900'; // AWS orange
+          serviceIcon = '🗄️';
+        } else if (config?.provider === 'custom') {
+          serviceName = 'Custom Upload';
+          serviceColor = '#10b981'; // Green
+          serviceIcon = '🔧';
+        }
+      }
+      
+      // Add service indicator badge
+      const badge = document.createElement('span');
+      badge.className = 'cb-upload-service-badge';
+      badge.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 8px;
+        padding: 2px 8px;
+        background: ${serviceColor}15;
+        color: ${serviceColor};
+        border: 1px solid ${serviceColor}40;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        vertical-align: middle;
+      `;
+      badge.innerHTML = `<span style="font-size: 12px;">${serviceIcon}</span> ${serviceName}`;
+      
+      // Append badge to hint
+      hint.appendChild(badge);
+    });
+  }, [uploadService, imageUploadConfig]);
+
   // Create a block element with controls
   const createBlockWithControls = useCallback((type: BlockType, data?: Partial<BlockData>): HTMLElement => {
     const blockId = data?.id || generateId();
-    
+
     // Create wrapper
     const wrapper = document.createElement('div');
     wrapper.className = 'cb-block';
@@ -286,14 +367,19 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     wrapper.appendChild(content);
     wrapper.appendChild(actions);
 
+    // Add upload service indicator for image blocks
+    if (type === 'image' && !(data as any)?.src) {
+      setTimeout(() => updateImagePlaceholders(wrapper), 0);
+    }
+
     return wrapper;
-  }, []);
+  }, [updateImagePlaceholders]);
 
   // Initialize editor content (only on first mount, not on initialContent changes)
   useEffect(() => {
     if (!contentRef.current || initialContentLoadedRef.current) return;
     initialContentLoadedRef.current = true;
-    
+
     contentRef.current.innerHTML = '';
 
     if (initialContent && initialContent.trim()) {
@@ -318,14 +404,19 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     }
 
     updateState();
-    
+
     // Save initial state to history (after a small delay to ensure everything is loaded)
     setTimeout(() => {
       if (saveToHistoryImmediateRef.current) {
         saveToHistoryImmediateRef.current();
       }
     }, 100);
-    
+
+    // Add upload service indicators to image placeholders
+    if (contentRef.current) {
+      updateImagePlaceholders(contentRef.current);
+    }
+
     // Initialize drag and drop
     if (!readOnly && contentRef.current) {
       initDragDrop({
@@ -344,7 +435,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         onDragEnd: () => {
           // DON'T clear selection - keep blocks selected after drag
           // The user may want to drag again or perform other operations
-          
+
           // Save to history immediately after reordering blocks
           if (saveToHistoryImmediateRef.current) {
             saveToHistoryImmediateRef.current();
@@ -372,7 +463,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const detectBlockType = (element: HTMLElement): BlockType => {
     const tag = element.tagName.toLowerCase();
     const className = element.className || '';
-    
+
     switch (tag) {
       case 'h1': return 'heading';
       case 'h2': return 'heading';
@@ -411,11 +502,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Extract block data from HTML element
   const extractBlockData = (element: HTMLElement, type: BlockType): Partial<BlockData> => {
     const data: any = { type };
-    
+
     // CRITICAL FIX (Bug #17): Never preserve data-block-id from pasted content
     // Always generate fresh IDs to prevent duplicates
     // The 'id' field will be auto-generated by createBlockWithControls
-    
+
     switch (type) {
       case 'heading':
         const level = parseInt(element.tagName.charAt(1)) || 2;
@@ -480,7 +571,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         data.url = element.getAttribute('data-url') || '';
         break;
     }
-    
+
     // CRITICAL FIX (Bug #17): Explicitly exclude any data-block-id that might have been in the element
     // This ensures we never copy IDs from pasted content
     return data;
@@ -494,7 +585,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     if (!contentRef.current) return '';
     return contentRef.current.innerHTML;
   }, []);
-  
+
   /**
    * Set full editor state HTML (internal use for undo/redo)
    * Preserves block IDs and structure
@@ -505,31 +596,141 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   }, []);
 
   // Get clean HTML output (no editor artifacts)
-  const getHTML = useCallback((): string => {
+  const getHTML = useCallback((options: GetHTMLOptions = {}): string => {
+    const {
+      stripEditorUI = true,
+      stripDataAttributes = true,
+      optimizeImages = true,
+      addResponsiveImages = true,
+    } = options;
+
     if (!contentRef.current) return '';
-    
+
     let html = '';
-    
+
     contentRef.current.querySelectorAll('.cb-block').forEach(wrapper => {
       const type = wrapper.getAttribute('data-block-type') as BlockType;
       const content = wrapper.querySelector('.cb-block-content');
-      
+
       if (!content) return;
-      
+
       // Get the actual content element
       const blockElement = content.firstElementChild as HTMLElement;
       if (!blockElement) return;
-      
+
       // Clone and clean
       const clone = blockElement.cloneNode(true) as HTMLElement;
-      
+
       // Remove editor-specific attributes and elements
       clone.removeAttribute('data-placeholder');
       clone.removeAttribute('contenteditable');
       clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
       clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
-      clone.querySelectorAll('.cb-code-toolbar, .cb-image-controls, .cb-table-controls, .cb-callout-type-selector').forEach(el => el.remove());
-      
+
+      if (stripEditorUI) {
+        // Remove all editor UI controls
+        clone.querySelectorAll('.cb-code-toolbar, .cb-image-controls, .cb-table-controls, .cb-callout-type-selector').forEach(el => el.remove());
+        
+        // Remove image editor UI elements (uploading state, alt text input, resize handles)
+        clone.querySelectorAll('.cb-image-uploading, .cb-image-error, .cb-image-alt-editor').forEach(el => el.remove());
+        
+        // Remove resize handles and unwrap resizable wrapper for clean HTML
+        clone.querySelectorAll('.cb-image-resizable').forEach(wrapper => {
+          const img = wrapper.querySelector('img');
+          if (img && wrapper.parentElement) {
+            // Move img out of resizable wrapper
+            wrapper.parentElement.appendChild(img);
+          }
+          wrapper.remove();
+        });
+        
+        // Remove image container wrapper for clean semantic HTML
+        clone.querySelectorAll('.cb-image-container').forEach(container => {
+          const img = container.querySelector('img');
+          if (img && container.parentElement) {
+            // Move img out of container
+            container.parentElement.insertBefore(img, container);
+          }
+          container.remove();
+        });
+        
+        // Remove all editor CSS classes (cb-* prefix) from all elements
+        const stripEditorClasses = (element: HTMLElement) => {
+          if (element.className) {
+            const classes = Array.from(element.classList);
+            const cleanClasses = classes.filter(cls => !cls.startsWith('cb-'));
+            if (cleanClasses.length > 0) {
+              element.className = cleanClasses.join(' ');
+            } else {
+              element.removeAttribute('class');
+            }
+          }
+          // Recursively clean child elements
+          Array.from(element.children).forEach(child => {
+            if (child instanceof HTMLElement) {
+              stripEditorClasses(child);
+            }
+          });
+        };
+        stripEditorClasses(clone);
+      }
+
+      if (stripDataAttributes) {
+        // Remove internal data attributes
+        clone.removeAttribute('data-block-id');
+        clone.querySelectorAll('[data-block-id]').forEach(el => el.removeAttribute('data-block-id'));
+      }
+
+      // Optimize images
+      if (optimizeImages || addResponsiveImages) {
+        clone.querySelectorAll('img').forEach(img => {
+          const src = img.getAttribute('src');
+          if (!src) return;
+
+          // Check if it's a Cloudinary URL
+          if (src.includes('cloudinary.com')) {
+            if (optimizeImages) {
+              // Add optimization params (q_auto, f_auto)
+              const optimizedUrl = optimizeCloudinaryUrl(src);
+              img.setAttribute('src', optimizedUrl);
+            }
+
+            if (addResponsiveImages) {
+              // Generate responsive srcset based on original image width
+              const width = parseInt(img.getAttribute('data-width') || '800', 10);
+              // Generate standard responsive widths based on original size
+              const widths = [480, 768, 1024, 1280, 1920].filter(w => w <= width * 1.5);
+              const srcset = generateCloudinarySrcset(src, widths);
+              if (srcset) {
+                img.setAttribute('srcset', srcset);
+                img.setAttribute('sizes', '(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px');
+              }
+            }
+          } 
+          // For non-Cloudinary images (S3, custom, etc.), add basic responsive attributes
+          else if (addResponsiveImages && !src.startsWith('data:')) {
+            // Get original width if available
+            const width = parseInt(img.getAttribute('data-width') || '800', 10);
+            
+            // For S3 and other CDNs, we can't generate transformed URLs automatically
+            // But we can still set the sizes attribute for better browser optimization
+            img.setAttribute('sizes', '(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px');
+            
+            // Add width/height attributes for better layout stability
+            const height = parseInt(img.getAttribute('data-height') || '600', 10);
+            img.setAttribute('width', String(width));
+            img.setAttribute('height', String(height));
+          }
+
+          // Clean up internal data attributes from images
+          if (stripDataAttributes) {
+            img.removeAttribute('data-width');
+            img.removeAttribute('data-height');
+            img.removeAttribute('data-public-id');
+          }
+        });
+      }
+
       // Special handling for different block types
       switch (type) {
         case 'code':
@@ -549,7 +750,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           html += clone.outerHTML + '\n';
       }
     });
-    
+
     return html.trim();
   }, []);
 
@@ -557,7 +758,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const setHTML = useCallback((html: string, restoreFocus: boolean = false): void => {
     if (!contentRef.current) return;
     contentRef.current.innerHTML = '';
-    
+
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html;
 
@@ -632,34 +833,34 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
    */
   const getCleanSelectionHTML = useCallback((): string => {
     if (!contentRef.current) return '';
-    
+
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount) return '';
-    
+
     // Check if we have multi-block selection (entire blocks selected)
     if (selectedBlockIds.size > 0) {
       // Multi-block selection - extract clean HTML for each selected block
       let cleanHTML = '';
       const allBlocks = Array.from(contentRef.current.querySelectorAll('.cb-block'));
-      
+
       allBlocks.forEach(wrapper => {
         const blockId = wrapper.getAttribute('data-block-id');
         if (!blockId || !selectedBlockIds.has(blockId)) return;
-        
+
         const blockType = wrapper.getAttribute('data-block-type');
         const contentWrapper = wrapper.querySelector('.cb-block-content');
-        
+
         if (!contentWrapper) return;
-        
+
         const blockElement = contentWrapper.firstElementChild as HTMLElement;
         if (!blockElement) return;
-        
+
         // Clone the block element
         const clone = blockElement.cloneNode(true) as HTMLElement;
-        
+
         // Remove ALL editor UI elements
         clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
-        
+
         // Remove editor-specific attributes
         clone.removeAttribute('data-placeholder');
         clone.removeAttribute('contenteditable');
@@ -669,7 +870,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
         clone.querySelectorAll('[data-block-id]').forEach(el => el.removeAttribute('data-block-id'));
         clone.querySelectorAll('[data-block-type]').forEach(el => el.removeAttribute('data-block-type'));
-        
+
         // Clean up inline styles that are editor-specific
         clone.querySelectorAll('[style]').forEach(el => {
           const element = el as HTMLElement;
@@ -678,7 +879,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             element.removeAttribute('style');
           }
         });
-        
+
         // Handle specific block types for clean output
         switch (blockType) {
           case 'code':
@@ -710,59 +911,59 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             cleanHTML += clone.outerHTML + '\n';
         }
       });
-      
+
       return cleanHTML.trim();
     }
-    
+
     // Inline text selection or partial block selection
     const range = selection.getRangeAt(0);
     const container = range.cloneContents();
     const tempDiv = document.createElement('div');
     tempDiv.appendChild(container);
-    
+
     // Find all selected blocks (partial or full)
     const blocks = tempDiv.querySelectorAll('.cb-block');
-    
+
     if (blocks.length === 0) {
       // No full blocks selected - just inline content
       const clone = tempDiv.cloneNode(true) as HTMLElement;
-      
+
       // Remove ALL editor-specific elements
       clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
-      
+
       // Remove editor-specific attributes
       clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
       clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
       clone.querySelectorAll('[data-block-id]').forEach(el => el.removeAttribute('data-block-id'));
       clone.querySelectorAll('[data-block-type]').forEach(el => el.removeAttribute('data-block-type'));
-      
+
       return clone.innerHTML.trim();
     }
-    
+
     // Full blocks are selected via range selection - extract clean semantic HTML
     let cleanHTML = '';
-    
+
     blocks.forEach(wrapper => {
       const blockType = wrapper.getAttribute('data-block-type');
       const contentWrapper = wrapper.querySelector('.cb-block-content');
-      
+
       if (!contentWrapper) return;
-      
+
       const blockElement = contentWrapper.firstElementChild as HTMLElement;
       if (!blockElement) return;
-      
+
       // Clone and clean the block
       const clone = blockElement.cloneNode(true) as HTMLElement;
-      
+
       // Remove ALL editor-specific elements
       clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
-      
+
       // Remove editor-specific attributes
       clone.removeAttribute('data-placeholder');
       clone.removeAttribute('contenteditable');
       clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
       clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
-      
+
       // Clean up inline styles that are editor-specific
       clone.querySelectorAll('[style]').forEach(el => {
         const element = el as HTMLElement;
@@ -770,7 +971,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           element.removeAttribute('style');
         }
       });
-      
+
       // Handle specific block types
       switch (blockType) {
         case 'code':
@@ -802,7 +1003,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           cleanHTML += clone.outerHTML + '\n';
       }
     });
-    
+
     return cleanHTML.trim();
   }, [selectedBlockIds]);
 
@@ -817,21 +1018,21 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   } | null => {
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount) return null;
-    
+
     const range = selection.getRangeAt(0);
-    
+
     // Find the block containing the cursor
     let node = range.startContainer;
-    
+
     // Walk up to find the block
     while (node && node !== contentRef.current) {
       if (node instanceof HTMLElement && node.classList?.contains('cb-block')) {
         const blockId = node.getAttribute('data-block-id');
-        
+
         // Get the editable element within this block
         const editableElement = node.querySelector('[contenteditable="true"]') as HTMLElement;
         if (!editableElement) return { blockId, offset: 0, isCollapsed: selection.isCollapsed };
-        
+
         // Calculate offset within the editable element
         let offset = 0;
         try {
@@ -842,12 +1043,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         } catch (e) {
           offset = 0;
         }
-        
+
         return { blockId, offset, isCollapsed: selection.isCollapsed };
       }
       node = node.parentNode as Node;
     }
-    
+
     return null;
   }, []);
 
@@ -861,7 +1062,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     isCollapsed: boolean;
   } | null): void => {
     if (!position || !position.blockId || !contentRef.current) return;
-    
+
     // Find the block
     const block = contentRef.current.querySelector(`[data-block-id="${position.blockId}"]`);
     if (!block) {
@@ -872,31 +1073,31 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
       return;
     }
-    
+
     // Find the editable element
     const editableElement = block.querySelector('[contenteditable="true"]') as HTMLElement;
     if (!editableElement) return;
-    
+
     // Restore cursor position within the element
     try {
       const range = document.createRange();
       const selection = window.getSelection();
       if (!selection) return;
-      
+
       // Walk through text nodes to find the offset
       const walker = document.createTreeWalker(
         editableElement,
         NodeFilter.SHOW_TEXT,
         null
       );
-      
+
       let currentOffset = 0;
       let found = false;
       let node: Node | null = walker.nextNode();
-      
+
       while (node) {
         const nodeLength = node.textContent?.length || 0;
-        
+
         if (currentOffset + nodeLength >= position.offset) {
           // Found the node containing our offset
           const localOffset = position.offset - currentOffset;
@@ -905,20 +1106,20 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           found = true;
           break;
         }
-        
+
         currentOffset += nodeLength;
         node = walker.nextNode();
       }
-      
+
       if (!found) {
         // Offset not found - place cursor at end
         range.selectNodeContents(editableElement);
         range.collapse(false);
       }
-      
+
       selection.removeAllRanges();
       selection.addRange(range);
-      
+
       // Focus the element
       editableElement.focus();
     } catch (e) {
@@ -931,24 +1132,24 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const saveToHistoryImmediate = useCallback(() => {
     const currentHTML = getEditorStateHTML(); // Use editor state instead of clean HTML
     const cursorPosition = captureCursorPosition();
-    
+
     // Don't save if nothing changed
     const lastEntry = undoStackRef.current[undoStackRef.current.length - 1];
     if (lastEntry && lastEntry.html === currentHTML) {
       return;
     }
-    
+
     const historyEntry: HistoryEntry = {
       html: currentHTML,
       cursorPosition,
       selectedBlockIds: Array.from(selectedBlockIds), // Save current selection
     };
-    
+
     // CRITICAL FIX (Bug #16): Limit both undo AND redo stacks to prevent memory leak
     // Keep last 50 entries in each stack
     undoStackRef.current = [...undoStackRef.current.slice(-49), historyEntry];
     redoStackRef.current = []; // Clear redo stack on new action
-    
+
     setEditorState(prev => ({
       ...prev,
       undoStack: undoStackRef.current,
@@ -956,7 +1157,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       isDirty: true,
     }));
   }, [getEditorStateHTML, captureCursorPosition, selectedBlockIds]);
-  
+
   // Store the function in ref for early access
   saveToHistoryImmediateRef.current = saveToHistoryImmediate;
 
@@ -967,7 +1168,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     }, 1000), // Save 1 second after user stops typing
     [saveToHistoryImmediate]
   );
-  
+
   // Main saveToHistory function (uses debounced version)
   const saveToHistory = useCallback(() => {
     debouncedSaveToHistory();
@@ -1009,12 +1210,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
     // Restore HTML
     setEditorStateHTML(previousEntry.html); // Use editor state
-    
+
     // MEDIUM-PRIORITY FIX (Bug #5): Use RAF instead of setTimeout for cursor restoration
     // This ensures DOM is actually updated before restoring cursor, avoiding timing issues
     requestAnimationFrame(() => {
       restoreCursorPosition(previousEntry.cursorPosition);
-      
+
       // Restore block selection
       if (previousEntry.selectedBlockIds && previousEntry.selectedBlockIds.length > 0) {
         setSelectedBlockIds(new Set(previousEntry.selectedBlockIds));
@@ -1060,12 +1261,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
     // Restore HTML
     setEditorStateHTML(nextEntry.html); // Use editor state
-    
+
     // MEDIUM-PRIORITY FIX (Bug #5): Use RAF instead of setTimeout for cursor restoration
     // This ensures DOM is actually updated before restoring cursor, avoiding timing issues
     requestAnimationFrame(() => {
       restoreCursorPosition(nextEntry.cursorPosition);
-      
+
       // Restore block selection
       if (nextEntry.selectedBlockIds && nextEntry.selectedBlockIds.length > 0) {
         setSelectedBlockIds(new Set(nextEntry.selectedBlockIds));
@@ -1078,11 +1279,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Insert a new block
   const insertBlockAfter = useCallback((type: BlockType, afterBlockId?: string, data?: Partial<BlockData>): HTMLElement | null => {
     if (!contentRef.current) return null;
-    
+
     saveToHistoryImmediate(); // Use immediate save for structural changes
-    
+
     const newBlock = createBlockWithControls(type, data);
-    
+
     if (afterBlockId) {
       const afterBlock = contentRef.current.querySelector(`[data-block-id="${afterBlockId}"]`);
       if (afterBlock) {
@@ -1093,7 +1294,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     } else {
       contentRef.current.appendChild(newBlock);
     }
-    
+
     // Focus the new block
     setTimeout(() => {
       // For code blocks, the contenteditable is nested deeper
@@ -1104,17 +1305,17 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         moveCursorToStart(editable);
       }
     }, 50);
-    
+
     updateState();
     emitChange();
-    
+
     return newBlock;
   }, [createBlockWithControls, saveToHistoryImmediate, updateState, emitChange]);
 
   // Delete a block
   const deleteBlockById = useCallback((blockId: string): void => {
     if (!contentRef.current) return;
-    
+
     const blocks = contentRef.current.querySelectorAll('.cb-block');
     if (blocks.length <= 1) {
       // Don't delete last block, just clear it
@@ -1125,17 +1326,17 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
       return;
     }
-    
+
     saveToHistoryImmediate(); // Use immediate save for structural changes
-    
+
     const block = contentRef.current.querySelector(`[data-block-id="${blockId}"]`);
     if (!block) return;
-    
+
     const prevBlock = block.previousElementSibling as HTMLElement;
     const nextBlock = block.nextElementSibling as HTMLElement;
-    
+
     block.remove();
-    
+
     // Focus adjacent block
     const targetBlock = nextBlock || prevBlock;
     if (targetBlock) {
@@ -1147,7 +1348,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
       }
     }
-    
+
     updateState();
     emitChange();
   }, [saveToHistoryImmediate, updateState, emitChange]); // CRITICAL FIX (Bug #18): Use saveToHistoryImmediate in deps
@@ -1155,18 +1356,18 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Move block up/down
   const moveBlock = useCallback((blockId: string, direction: 'up' | 'down'): void => {
     if (!contentRef.current) return;
-    
+
     const block = contentRef.current.querySelector(`[data-block-id="${blockId}"]`);
     if (!block) return;
-    
+
     saveToHistoryImmediate(); // Use immediate save for structural changes
-    
+
     if (direction === 'up' && block.previousElementSibling) {
       block.previousElementSibling.before(block);
     } else if (direction === 'down' && block.nextElementSibling) {
       block.nextElementSibling.after(block);
     }
-    
+
     updateState();
     emitChange();
   }, [saveToHistoryImmediate, updateState, emitChange]);
@@ -1174,26 +1375,26 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Transform block to different type
   const transformBlockType = useCallback((blockId: string, newType: BlockType, data?: Record<string, any>): void => {
     if (!contentRef.current) return;
-    
+
     const wrapper = contentRef.current.querySelector(`[data-block-id="${blockId}"]`);
     if (!wrapper) return;
-    
+
     const currentType = wrapper.getAttribute('data-block-type');
     if (currentType === newType && !data) return;
-    
+
     saveToHistoryImmediate(); // Use immediate save for structural changes
-    
+
     // Get current content
     const contentEl = wrapper.querySelector('[contenteditable="true"]');
     const currentContent = contentEl?.innerHTML || '';
-    
+
     // Create new block with same content where applicable
     const blockData = { content: currentContent, ...data } as any;
     const newBlock = createBlockWithControls(newType, blockData);
-    
+
     // Replace old block
     wrapper.replaceWith(newBlock);
-    
+
     // Focus new block
     setTimeout(() => {
       // For code blocks, the contenteditable is nested deeper
@@ -1204,7 +1405,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         moveCursorToEnd(editable);
       }
     }, 50);
-    
+
     updateState();
     emitChange();
   }, [createBlockWithControls, saveToHistoryImmediate, updateState, emitChange]);
@@ -1266,13 +1467,13 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       redo: handleRedo,
       focus,
       blur,
-      destroy: () => {},
+      destroy: () => { },
       registerBlock: (def) => blockRegistry.register(def),
-      registerCommand: () => {},
-      executeCommand: () => {},
+      registerCommand: () => { },
+      executeCommand: () => { },
     };
-  // Only recreate when truly necessary - not on editorState or activeBlockId changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only recreate when truly necessary - not on editorState or activeBlockId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted, selectionVersion, props, getHTML, setHTML, getText, insertBlockAfter, deleteBlockById,
     moveBlock, transformBlockType, handleUndo, handleRedo, focus, blur, emitChange]);
 
@@ -1295,80 +1496,205 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     }
   }, [onReady, editorInstance]);
 
-  // Handle image file upload
+  // Helper: Show uploading state with progress
+  const showImageUploadingState = useCallback((figure: HTMLElement, filename: string) => {
+    const container = figure.querySelector('.cb-image-container');
+    if (container) {
+      container.innerHTML = `
+        <div class="cb-image-uploading">
+          <div class="cb-spinner"></div>
+          <p class="cb-upload-filename">Uploading ${filename}...</p>
+          <div class="cb-upload-progress">
+            <div class="cb-upload-progress-bar" style="width: 0%"></div>
+          </div>
+        </div>
+      `;
+    }
+  }, []);
+
+  // Helper: Show upload error state
+  const showImageUploadError = useCallback((figure: HTMLElement, error: unknown) => {
+    const container = figure.querySelector('.cb-image-container');
+    if (container) {
+      const message = ImageUploadService.getErrorMessage(error);
+      container.innerHTML = `
+        <div class="cb-image-error">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p class="cb-error-message">${message}</p>
+          <button type="button" class="cb-retry-upload">Try Again</button>
+        </div>
+      `;
+    }
+  }, []);
+
+  // Helper: Add image controls (alignment, crop, alt text)
+  const addImageControls = useCallback((figure: HTMLElement) => {
+    // Add alignment/crop controls
+    let controls = figure.querySelector('.cb-image-controls');
+    if (!controls) {
+      controls = document.createElement('div');
+      controls.className = 'cb-image-controls';
+      controls.innerHTML = `
+        <button type="button" class="cb-image-align" data-align="left" title="Align left">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="17" x2="3" y1="10" y2="10"/><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="3" y1="14" y2="14"/><line x1="17" x2="3" y1="18" y2="18"/>
+          </svg>
+        </button>
+        <button type="button" class="cb-image-align" data-align="center" title="Align center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" x2="6" y1="10" y2="10"/><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="3" y1="14" y2="14"/><line x1="18" x2="6" y1="18" y2="18"/>
+          </svg>
+        </button>
+        <button type="button" class="cb-image-align" data-align="right" title="Align right">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="21" x2="7" y1="10" y2="10"/><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="3" y1="14" y2="14"/><line x1="21" x2="7" y1="18" y2="18"/>
+          </svg>
+        </button>
+        <span class="cb-image-controls-divider"></span>
+        <button type="button" class="cb-image-crop" data-action="crop" title="Crop image">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>
+          </svg>
+        </button>
+      `;
+      const caption = figure.querySelector('figcaption');
+      if (caption) {
+        figure.insertBefore(controls, caption);
+      } else {
+        figure.appendChild(controls);
+      }
+    }
+
+    // Add alt text editor (important for SEO and accessibility)
+    let altEditor = figure.querySelector('.cb-image-alt-editor');
+    if (!altEditor) {
+      const img = figure.querySelector('img');
+      const currentAlt = img?.alt || '';
+
+      altEditor = document.createElement('div');
+      altEditor.className = 'cb-image-alt-editor';
+      altEditor.innerHTML = `
+        <label class="cb-image-alt-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          Alt text (for accessibility & SEO)
+        </label>
+        <input 
+          type="text" 
+          class="cb-image-alt-input"
+          placeholder="Describe this image"
+          value="${currentAlt.replace(/"/g, '&quot;')}"
+        />
+      `;
+
+      const caption = figure.querySelector('figcaption');
+      if (caption) {
+        figure.insertBefore(altEditor, caption);
+      } else {
+        figure.appendChild(altEditor);
+      }
+    }
+  }, []);
+
+  // Handle image file upload with cloud storage support
   const handleImageUpload = useCallback(async (e: Event) => {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    
+
     const figure = input.closest('figure.cb-image') as HTMLElement;
     if (!figure) return;
-    
+
     saveToHistoryImmediate(); // Use immediate save for image upload
-    
+
+    // Check if upload service is available
+    if (!uploadService) {
+      // Fallback to base64 with warning
+      console.warn(
+        '⚠️ Authorly: No imageUploadConfig provided. Using base64 fallback.\n' +
+        'For production, configure Cloudinary or S3.\n' +
+        'See: https://authorly.dev/docs/image-upload'
+      );
+
+      try {
+        const dataUrl = await createImageFromFile(file);
+        setImageSrc(figure, dataUrl, file.name);
+        addImageControls(figure);
+        emitChange();
+      } catch (err) {
+        console.error('Failed to load image:', err);
+        showImageUploadError(figure, err);
+      }
+      return;
+    }
+
     try {
-      const dataUrl = await createImageFromFile(file);
-      setImageSrc(figure, dataUrl, file.name);
-      
-      // Add alignment controls since we now have an image
-      let controls = figure.querySelector('.cb-image-controls');
-      if (!controls) {
-        controls = document.createElement('div');
-        controls.className = 'cb-image-controls';
-        controls.innerHTML = `
-          <button type="button" class="cb-image-align" data-align="left" title="Align left">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="17" x2="3" y1="10" y2="10"/><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="3" y1="14" y2="14"/><line x1="17" x2="3" y1="18" y2="18"/>
-            </svg>
-          </button>
-          <button type="button" class="cb-image-align" data-align="center" title="Align center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" x2="6" y1="10" y2="10"/><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="3" y1="14" y2="14"/><line x1="18" x2="6" y1="18" y2="18"/>
-            </svg>
-          </button>
-          <button type="button" class="cb-image-align" data-align="right" title="Align right">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="21" x2="7" y1="10" y2="10"/><line x1="21" x2="3" y1="6" y2="6"/><line x1="21" x2="3" y1="14" y2="14"/><line x1="21" x2="7" y1="18" y2="18"/>
-            </svg>
-          </button>
-          <span class="cb-image-controls-divider"></span>
-          <button type="button" class="cb-image-crop" data-action="crop" title="Crop image">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>
-            </svg>
-          </button>
-        `;
-        const caption = figure.querySelector('figcaption');
-        if (caption) {
-          figure.insertBefore(controls, caption);
-        } else {
-          figure.appendChild(controls);
+      // Show loading state
+      showImageUploadingState(figure, file.name);
+
+      // Callback: upload started
+      onUploadStart?.(file.name);
+
+      // Upload to cloud with progress tracking
+      const result = await uploadService.upload(file, (progress) => {
+        // Update progress bar
+        const progressBar = figure.querySelector('.cb-upload-progress-bar') as HTMLElement;
+        if (progressBar) {
+          progressBar.style.width = `${progress.percent}%`;
+        }
+        // Call user's progress callback
+        onUploadProgress?.(progress);
+      });
+
+      // Callback: upload success
+      onUploadSuccess?.(result);
+
+      // Insert image with cloud URL
+      setImageSrc(figure, result.url, file.name);
+
+      // Store dimensions as data attributes for responsive images
+      const img = figure.querySelector('img');
+      if (img) {
+        img.setAttribute('data-width', String(result.width));
+        img.setAttribute('data-height', String(result.height));
+        if (result.publicId) {
+          img.setAttribute('data-public-id', result.publicId);
         }
       }
-      
+
+      // Add alignment and crop controls
+      addImageControls(figure);
+
       emitChange();
-    } catch (err) {
-      console.error('Failed to load image:', err);
+    } catch (error) {
+      // Callback: upload error
+      onUploadError?.(error as Error);
+
+      // Show error state with retry option
+      showImageUploadError(figure, error);
     }
-  }, [saveToHistoryImmediate, emitChange]);
+  }, [uploadService, saveToHistoryImmediate, emitChange, onUploadStart, onUploadSuccess, onUploadError, onUploadProgress, showImageUploadingState, showImageUploadError, addImageControls]);
 
   // Handle Excalidraw modal save
   const handleExcalidrawSave = useCallback((imageDataUrl: string, elements: readonly ExcalidrawElement[], appState: Partial<AppState>) => {
     if (!excalidrawModal.blockId || !contentRef.current) return;
-    
+
     // Find the block wrapper
     const blockWrapper = contentRef.current.querySelector(
       `[data-block-id="${excalidrawModal.blockId}"]`
     ) as HTMLElement;
-    
+
     if (!blockWrapper) return;
-    
+
     // Get the inner excalidraw element
     const excalidrawElement = blockWrapper.querySelector('.cb-excalidraw') as HTMLElement;
     if (!excalidrawElement) return;
-    
+
     saveToHistoryImmediate();
-    
+
     // Update the block with the drawing
     const definition = blockRegistry.get('excalidraw');
     if (definition) {
@@ -1378,7 +1704,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         appState,
       });
     }
-    
+
     emitChange();
     setExcalidrawModal({ isOpen: false, blockId: null, initialElements: [], initialAppState: {} });
   }, [excalidrawModal.blockId, saveToHistoryImmediate, emitChange]);
@@ -1392,62 +1718,77 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // CRITICAL FIX (Bug #1): Properly cleanup event listeners to prevent memory leaks
   useEffect(() => {
     if (!contentRef.current) return;
-    
+
     const handleImageInputChange = (e: Event) => {
       handleImageUpload(e);
     };
-    
+
     const handleImageAlignClick = (e: MouseEvent) => {
       const button = (e.target as HTMLElement).closest('[data-align]') as HTMLElement;
       if (!button) return;
-      
+
       const align = button.getAttribute('data-align') as 'left' | 'center' | 'right';
       const figure = button.closest('figure.cb-image') as HTMLElement;
-      
+
       if (figure && align) {
         saveToHistoryImmediate(); // Use immediate save for image alignment
         setImageAlign(figure, align);
         emitChange();
       }
     };
-    
+
     // Use event delegation for image inputs
     const container = contentRef.current;
-    
+
     // Define all event handlers with proper references for cleanup
     const handleChange = (e: Event) => {
       if ((e.target as HTMLElement).matches('.cb-image-input')) {
         handleImageInputChange(e);
       }
     };
-    
+
+    // Handle alt text input changes
+    const handleInput = (e: Event) => {
+      const target = e.target as HTMLInputElement;
+
+      if (target.matches('.cb-image-alt-input')) {
+        const figure = target.closest('figure.cb-image') as HTMLElement;
+        const img = figure?.querySelector('img');
+
+        if (img) {
+          img.alt = target.value;
+          emitChange();
+        }
+      }
+    };
+
     const handleClickMain = (e: Event) => {
       const target = e.target as HTMLElement;
-      
+
       // Don't interfere with input/textarea interactions
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
         console.log('🎯 Click on input field, allowing default behavior:', target.className);
         return;
       }
-      
+
       // Handle image alignment clicks
       if (target.closest('.cb-image-align')) {
         handleImageAlignClick(e as MouseEvent);
       }
-      
+
       // Handle image crop button click
       if (target.closest('.cb-image-crop')) {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Check if crop modal is already open
         if (document.querySelector('.cb-crop-modal')) {
           return;
         }
-        
+
         const figure = target.closest('figure.cb-image') as HTMLElement;
         const img = figure?.querySelector('img') as HTMLImageElement;
-        
+
         if (figure && img && img.src) {
           const modal = createCropModal(
             img.src,
@@ -1456,12 +1797,26 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
               img.src = croppedSrc;
               emitChange();
             },
-            () => {} // onCancel - nothing needed
+            () => { } // onCancel - nothing needed
           );
           document.body.appendChild(modal);
         }
       }
-      
+
+      // Handle retry upload button click
+      if (target.closest('.cb-retry-upload')) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const figure = target.closest('figure.cb-image') as HTMLElement;
+        const fileInput = figure?.querySelector('.cb-image-input') as HTMLInputElement;
+
+        if (fileInput) {
+          // Trigger file input again
+          fileInput.click();
+        }
+      }
+
       // Handle checkbox clicks in checklists
       if (target.classList.contains('cb-checkbox')) {
         const checkbox = target as HTMLInputElement;
@@ -1474,7 +1829,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           emitChange();
         }
       }
-      
+
       // Handle Excalidraw placeholder click
       if (target.closest('.cb-excalidraw-placeholder')) {
         e.preventDefault();
@@ -1493,7 +1848,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-      
+
       // Handle Excalidraw edit button click
       if (target.closest('.cb-excalidraw-edit-btn')) {
         e.preventDefault();
@@ -1506,11 +1861,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             // Get the inner excalidraw element to read stored data
             const excalidrawElement = blockWrapper.querySelector('.cb-excalidraw') as HTMLElement;
             if (!excalidrawElement) return;
-            
+
             // Get stored Excalidraw data
             let initialElements: any[] = [];
             let initialAppState: any = {};
-            
+
             try {
               const elementsStr = excalidrawElement.getAttribute('data-excalidraw-elements');
               if (elementsStr) {
@@ -1521,7 +1876,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
               // IMPROVED (Bug #6): Better error feedback
               console.error('Excalidraw data may be corrupted. Please try creating a new drawing.');
             }
-            
+
             try {
               const appStateStr = excalidrawElement.getAttribute('data-excalidraw-appstate');
               if (appStateStr) {
@@ -1530,7 +1885,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             } catch (err) {
               console.warn('Failed to parse Excalidraw appState:', err);
             }
-            
+
             setExcalidrawModal({
               isOpen: true,
               blockId,
@@ -1541,11 +1896,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
       }
     };
-    
+
     const handleKeydown = (e: Event) => {
       const target = e.target as HTMLElement;
       const keyEvent = e as KeyboardEvent;
-      
+
       if (target.classList.contains('cb-video-url-input') && keyEvent.key === 'Enter') {
         keyEvent.preventDefault();
         const input = target as HTMLInputElement;
@@ -1559,7 +1914,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-      
+
       // Handle image URL input
       if (target.classList.contains('cb-image-url-input') && keyEvent.key === 'Enter') {
         keyEvent.preventDefault();
@@ -1570,7 +1925,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           if (figure) {
             saveToHistory();
             setImageSrc(figure, url);
-            
+
             // Add alignment controls
             let controls = figure.querySelector('.cb-image-controls');
             if (!controls) {
@@ -1606,30 +1961,30 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
                 figure.appendChild(controls);
               }
             }
-            
+
             emitChange();
           }
         }
       }
     };
-    
+
     // Handle paste in image/video URL inputs
     const handleInputPaste = (e: Event) => {
       const target = e.target as HTMLElement;
       const pasteEvent = e as ClipboardEvent;
-      
+
       console.log('🎯 DOM handleInputPaste triggered:', {
         tagName: target.tagName,
         className: target.className,
         hasClipboardData: !!pasteEvent.clipboardData,
         clipboardText: pasteEvent.clipboardData?.getData('text/plain')?.substring(0, 50)
       });
-      
+
       // Critical: DO NOTHING - let the browser handle paste naturally
       // Don't call preventDefault, don't call stopPropagation
       // Just let the input field work normally
     };
-    
+
     const handleClickCallout = (e: Event) => {
       const typeButton = (e.target as HTMLElement).closest('.cb-callout-type-selector button[data-type]') as HTMLElement;
       if (typeButton) {
@@ -1644,18 +1999,20 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
       }
     };
-    
+
     // Add event listeners
     container.addEventListener('change', handleChange);
+    container.addEventListener('input', handleInput);
     container.addEventListener('click', handleClickMain);
     container.addEventListener('keydown', handleKeydown);
     container.addEventListener('click', handleClickCallout);
     container.addEventListener('paste', handleInputPaste, true); // Use capture phase to intercept paste before it bubbles
-    
+
     // CRITICAL FIX: Cleanup function to remove all event listeners
     return () => {
       if (container) {
         container.removeEventListener('change', handleChange);
+        container.removeEventListener('input', handleInput);
         container.removeEventListener('click', handleClickMain);
         container.removeEventListener('keydown', handleKeydown);
         container.removeEventListener('click', handleClickCallout);
@@ -1667,7 +2024,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Handle image resize
   useEffect(() => {
     if (!contentRef.current || readOnly) return;
-    
+
     // MEDIUM-PRIORITY FIX (Bug #2): Store container reference in closure to prevent race condition during cleanup
     // This ensures the container reference is still valid when the cleanup function runs
     const container = contentRef.current;
@@ -1678,93 +2035,93 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     let currentWrapper: HTMLElement | null = null;
     let handleType: string | null = null;
     let rafId: number | null = null; // PERFORMANCE FIX (Bug #7): RAF throttling
-    
+
     const handleResizeStart = (e: MouseEvent) => {
       const handle = (e.target as HTMLElement).closest('.cb-image-resize-handle') as HTMLElement;
       if (!handle) return;
-      
+
       e.preventDefault();
       e.stopPropagation();
-      
+
       currentWrapper = handle.closest('.cb-image-resizable') as HTMLElement;
       currentImg = currentWrapper?.querySelector('img') as HTMLImageElement;
       handleType = handle.getAttribute('data-handle');
-      
+
       if (!currentImg || !currentWrapper) return;
-      
+
       isResizing = true;
       startX = e.clientX;
       startWidth = currentImg.offsetWidth;
-      
+
       currentWrapper.classList.add('resizing');
       document.body.style.cursor = handle.style.cursor || 'se-resize';
       document.body.style.userSelect = 'none';
-      
+
       saveToHistory();
     };
-    
+
     // PERFORMANCE FIX (Bug #7): Throttle resize with RAF to prevent excessive reflows
     const handleResizeMove = (e: MouseEvent) => {
       if (!isResizing || !currentImg || !handleType) return;
-      
+
       e.preventDefault();
-      
+
       // Cancel any pending RAF
       if (rafId !== null) return;
-      
+
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        
+
         if (!currentImg || !isResizing) return;
-        
+
         const diff = e.clientX - startX;
         let newWidth: number;
-        
+
         // Handle direction affects how we calculate width
         if (handleType === 'w' || handleType === 'sw' || handleType === 'nw') {
           newWidth = startWidth - diff;
         } else {
           newWidth = startWidth + diff;
         }
-        
+
         // Constrain width between 50px and 100% of container
         const containerWidth = container.offsetWidth - 100; // Account for padding
         newWidth = Math.max(50, Math.min(newWidth, containerWidth));
-        
+
         currentImg.style.width = `${newWidth}px`;
         currentImg.style.height = 'auto';
       });
     };
-    
+
     const handleResizeEnd = () => {
       if (!isResizing) return;
-      
+
       isResizing = false;
-      
+
       // PERFORMANCE FIX (Bug #7): Cancel pending RAF on resize end
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      
+
       if (currentWrapper) {
         currentWrapper.classList.remove('resizing');
       }
-      
+
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      
+
       currentImg = null;
       currentWrapper = null;
       handleType = null;
-      
+
       emitChange();
     };
-    
+
     container.addEventListener('mousedown', handleResizeStart);
     document.addEventListener('mousemove', handleResizeMove);
     document.addEventListener('mouseup', handleResizeEnd);
-    
+
     // MEDIUM-PRIORITY FIX (Bug #2): Add null check for container in cleanup
     // Prevents errors if container is removed before cleanup runs
     return () => {
@@ -1782,25 +2139,25 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
    */
   const handleBlockClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    
+
     // Handle drag handle clicks for multi-selection
     const dragHandle = target.closest('.cb-block-drag');
     if (dragHandle) {
       console.log('🖱️ Drag handle clicked, shiftKey:', e.shiftKey);
-      
+
       const block = target.closest('.cb-block') as HTMLElement;
       const blockId = block?.getAttribute('data-block-id');
       if (!blockId) return;
-      
+
       console.log('📦 Block ID:', blockId);
-      
+
       // Shift+Click for multi-selection
       if (e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
-        
+
         console.log('✅ Shift+Click detected, toggling selection');
-        
+
         setSelectedBlockIds(prev => {
           const newSet = new Set(prev);
           if (newSet.has(blockId)) {
@@ -1826,23 +2183,23 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
       return;
     }
-    
+
     // Handle clicks on non-editable blocks (divider, image, video)
     const block = target.closest('.cb-block') as HTMLElement;
     if (!block) return;
-    
+
     const blockType = block.getAttribute('data-block-type');
     const blockId = block.getAttribute('data-block-id');
-    
+
     // If clicked on divider, image, or video block (not their controls)
     if (blockType === 'divider' || blockType === 'image' || blockType === 'video') {
       // Don't select if clicking on controls/buttons
       if (target.closest('button, input, .cb-image-controls, .cb-table-controls')) {
         return;
       }
-      
+
       console.log('🎯 Clicked on non-editable block:', blockType);
-      
+
       if (e.shiftKey && blockId) {
         // Shift+Click: toggle selection
         e.preventDefault();
@@ -1882,16 +2239,16 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const target = e.target as HTMLElement;
     const button = target.closest('[data-action]') as HTMLElement;
     if (!button) return;
-    
+
     const action = button.getAttribute('data-action');
     const block = button.closest('.cb-block') as HTMLElement;
     const blockId = block?.getAttribute('data-block-id');
-    
+
     if (!blockId && !action?.startsWith('add') && !action?.startsWith('delete')) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     switch (action) {
       case 'add':
         if (blockId) {
@@ -1899,13 +2256,13 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           saveToHistoryImmediate(); // Use immediate save for adding block
           const newBlock = createBlockWithControls('paragraph');
           block.after(newBlock);
-          
+
           // Focus the new block
           const newEditable = newBlock.querySelector('[contenteditable="true"]') as HTMLElement;
           if (newEditable) {
             newEditable.focus();
           }
-          
+
           // Get the new block's ID and open the menu
           const newBlockId = newBlock.getAttribute('data-block-id');
           if (newBlockId) {
@@ -1916,7 +2273,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
               setShowBlockMenu(true);
             }, 50);
           }
-          
+
           updateState();
           emitChange();
         }
@@ -2004,7 +2361,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Handle keyboard events
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (readOnly) return;
-    
+
     // Don't handle keys if block menu is open (let it handle its own keys)
     if (showBlockMenu) return;
 
@@ -2015,22 +2372,22 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         e.preventDefault();
         console.log('🗑️ Deleting', selectedBlockIds.size, 'selected blocks');
         saveToHistoryImmediate();
-        
+
         // Get the first selected block to know where to place the replacement paragraph
         const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
         const firstSelectedBlock = allBlocks.find(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
-        
+
         // Delete all selected blocks
         selectedBlockIds.forEach(blockId => {
           const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
           block?.remove();
         });
-        
+
         // Clear selection
         const emptySet = new Set<string>();
         selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
         setSelectedBlockIds(emptySet);
-        
+
         // Ensure at least one block remains
         if (contentRef.current && contentRef.current.children.length === 0) {
           const newBlock = createBlockWithControls('paragraph');
@@ -2050,21 +2407,21 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             }, 0);
           }
         }
-        
+
         updateState();
         emitChange();
         return;
       }
-      
+
       // Duplicate selected blocks (Ctrl+D)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         console.log('📋 Duplicating', selectedBlockIds.size, 'selected blocks');
         saveToHistoryImmediate();
-        
+
         const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
         const selectedBlocks = allBlocks.filter(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
-        
+
         // Clone each selected block
         selectedBlocks.forEach(block => {
           const clone = block.cloneNode(true) as HTMLElement;
@@ -2072,7 +2429,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           clone.setAttribute('data-block-id', generateId());
           block.after(clone);
         });
-        
+
         const emptySet = new Set<string>();
         selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
         setSelectedBlockIds(emptySet);
@@ -2108,26 +2465,26 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         case 'a':
           // Two-level selection: first press selects current block, second selects all
           e.preventDefault();
-          
+
           const selection = window.getSelection();
           if (!selection) return;
-          
+
           // Get current editable element (could be nested in code block, table cell, etc.)
           const editableElement = target.closest('[contenteditable="true"]') as HTMLElement;
           if (!editableElement) return;
-          
+
           // Check if current block content is already fully selected
           const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-          const isBlockFullySelected = range && 
-            range.startContainer === editableElement && 
+          const isBlockFullySelected = range &&
+            range.startContainer === editableElement &&
             range.endContainer === editableElement &&
             range.toString().trim() === editableElement.textContent?.trim();
-          
+
           // Alternative check: compare selected text length to block content length
           const selectedText = selection.toString();
           const blockText = editableElement.textContent || '';
           const isContentFullySelected = selectedText.trim() === blockText.trim() && selectedText.length > 0;
-          
+
           if (isBlockFullySelected || isContentFullySelected) {
             // Second Ctrl+A: Select all blocks in editor
             if (contentRef.current) {
@@ -2190,11 +2547,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
-      
+
       // Check if we're at the end of a <code> element
       let node = range.startContainer;
       let codeElement: HTMLElement | null = null;
-      
+
       // Find parent <code> element
       while (node && node !== contentRef.current) {
         if (node instanceof HTMLElement && node.tagName === 'CODE') {
@@ -2203,19 +2560,19 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
         node = node.parentNode as Node;
       }
-      
+
       if (codeElement && selection.isCollapsed) {
         // Check if cursor is at the very end of the code element
         const isAtEnd = range.startOffset === (range.startContainer.textContent?.length || 0) &&
-                        range.startContainer === codeElement.lastChild;
-        
+          range.startContainer === codeElement.lastChild;
+
         // Handle Right Arrow or Space when at the end of inline code
         if (isAtEnd && (e.key === 'ArrowRight' || e.key === ' ')) {
           e.preventDefault();
-          
+
           // Create a zero-width space after the code element to place cursor
           let nextNode = codeElement.nextSibling;
-          
+
           // If there's no next sibling or it's another inline element, create a text node
           if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
             const textNode = document.createTextNode(e.key === ' ' ? ' ' : '\u200B');
@@ -2225,7 +2582,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             // Add space to existing text node
             nextNode.textContent = ' ' + (nextNode.textContent || '');
           }
-          
+
           // Move cursor to after the code element
           const newRange = document.createRange();
           if (e.key === ' ') {
@@ -2237,7 +2594,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
           selection.removeAllRanges();
           selection.addRange(newRange);
-          
+
           if (e.key === ' ') {
             emitChange();
           }
@@ -2249,32 +2606,32 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // Tab key in lists - indent/outdent
     if (e.key === 'Tab' && (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList')) {
       e.preventDefault();
-      
+
       const li = target.closest('li');
       if (!li) return;
-      
+
       saveToHistoryImmediate(); // Use immediate save for structural change
-      
+
       if (e.shiftKey) {
         // Shift+Tab: Outdent
         const parentList = li.parentElement as HTMLElement;
         const isNested = parentList?.classList.contains('cb-nested-list');
-        
+
         if (isNested) {
           // Move item to parent list
           const parentLi = parentList.parentElement as HTMLElement;
           const grandparentList = parentLi?.parentElement as HTMLElement;
-          
+
           if (grandparentList) {
             grandparentList.insertBefore(li, parentLi.nextSibling);
-            
+
             // Remove empty nested list
             if (parentList.children.length === 0) {
               parentList.remove();
             }
-            
+
             // Focus the moved item
-            const focusTarget = blockType === 'checkList' 
+            const focusTarget = blockType === 'checkList'
               ? li.querySelector('.cb-checklist-content') as HTMLElement
               : li;
             if (focusTarget) {
@@ -2288,11 +2645,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       } else {
         // Tab: Indent
         const prevSibling = li.previousElementSibling as HTMLElement;
-        
+
         if (prevSibling && prevSibling.tagName === 'LI') {
           // Create or get nested list in previous sibling
           let nestedList = prevSibling.querySelector(':scope > ul, :scope > ol') as HTMLElement;
-          
+
           if (!nestedList) {
             // Create new nested list
             const listType = blockType === 'numberedList' ? 'ol' : 'ul';
@@ -2300,12 +2657,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             nestedList.className = `cb-list cb-nested-list`;
             prevSibling.appendChild(nestedList);
           }
-          
+
           // Move current item to nested list
           nestedList.appendChild(li);
-          
+
           // Focus the moved item
-          const focusTarget = blockType === 'checkList' 
+          const focusTarget = blockType === 'checkList'
             ? li.querySelector('.cb-checklist-content') as HTMLElement
             : li;
           if (focusTarget) {
@@ -2316,7 +2673,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-      
+
       emitChange();
       return;
     }
@@ -2324,10 +2681,10 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // Tab key in code blocks - insert indentation
     if (e.key === 'Tab' && blockType === 'code') {
       e.preventDefault();
-      
+
       const selection = window.getSelection();
       const range = selection?.getRangeAt(0);
-      
+
       if (range) {
         // Insert 2 spaces for indentation
         const indent = '  ';
@@ -2345,21 +2702,21 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // Tab key in tables - navigate between cells
     if (e.key === 'Tab' && blockType === 'table') {
       e.preventDefault();
-      
+
       const cell = target.closest('td, th') as HTMLTableCellElement;
       if (!cell) return;
-      
+
       const tr = cell.parentElement as HTMLTableRowElement;
       const table = tr.closest('table');
       if (!tr || !table) return;
-      
+
       const cells = Array.from(tr.querySelectorAll('th, td'));
       const currentIndex = cells.indexOf(cell);
       const rows = Array.from(table.querySelectorAll('tr'));
       const currentRowIndex = rows.indexOf(tr);
-      
+
       let nextCell: HTMLTableCellElement | null = null;
-      
+
       if (e.shiftKey) {
         // Move backward
         if (currentIndex > 0) {
@@ -2390,7 +2747,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-      
+
       if (nextCell) {
         nextCell.focus();
         // Select all content in the cell
@@ -2406,15 +2763,15 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // Shift+Enter in lists - create nested list item
     if (e.key === 'Enter' && e.shiftKey && (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList')) {
       e.preventDefault();
-      
+
       const li = target.closest('li');
       if (!li) return;
-      
+
       saveToHistoryImmediate(); // Use immediate save for structural change
-      
+
       // Create or get nested list
       let nestedList = li.querySelector(':scope > ul, :scope > ol') as HTMLElement;
-      
+
       if (!nestedList) {
         // Create new nested list
         const listType = blockType === 'numberedList' ? 'ol' : 'ul';
@@ -2422,29 +2779,29 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         nestedList.className = `cb-list cb-nested-list`;
         li.appendChild(nestedList);
       }
-      
+
       // Create new list item
       const newLi = document.createElement('li');
       newLi.className = 'cb-list-item';
       newLi.setAttribute('data-item-id', generateId());
-      
+
       if (blockType === 'checkList') {
         const wrapper = document.createElement('div');
         wrapper.className = 'cb-checklist-wrapper';
-        
+
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'cb-checkbox';
         checkbox.setAttribute('tabindex', '-1');
-        
+
         const contentSpan = document.createElement('span');
         contentSpan.className = 'cb-checklist-content';
         contentSpan.setAttribute('contenteditable', 'true');
-        
+
         wrapper.appendChild(checkbox);
         wrapper.appendChild(contentSpan);
         newLi.appendChild(wrapper);
-        
+
         nestedList.appendChild(newLi);
         contentSpan.focus();
         moveCursorToStart(contentSpan);
@@ -2454,7 +2811,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         newLi.focus();
         moveCursorToStart(newLi);
       }
-      
+
       emitChange();
       return;
     }
@@ -2463,44 +2820,44 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     if (e.key === 'Enter' && !e.shiftKey) {
       // Don't split code blocks on enter
       if (blockType === 'code') return;
-      
+
       // For lists, handle specially
       if (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList') {
         const li = target.closest('li');
         if (!li) return;
-        
+
         // Get the editable content element
-        const editableContent = blockType === 'checkList' 
+        const editableContent = blockType === 'checkList'
           ? li.querySelector('.cb-checklist-content') as HTMLElement
           : li;
-        
+
         // Check if the list item is empty
         const content = editableContent?.textContent?.trim() || '';
-        
+
         if (content === '') {
           // Empty list item - exit list and create paragraph
           e.preventDefault();
           saveToHistoryImmediate(); // Use immediate save for structural change
-          
+
           const listElement = li.closest('ul, ol') as HTMLElement;
           const wrapper = block;
-          
+
           // Check if this is a nested list
           const isNested = li.parentElement?.classList.contains('cb-nested-list');
-          
+
           if (isNested) {
             // Outdent the item instead of exiting
             const parentList = li.parentElement as HTMLElement;
             const parentLi = parentList.parentElement as HTMLElement;
             const grandparentList = parentLi.parentElement as HTMLElement;
-            
+
             if (grandparentList) {
               grandparentList.insertBefore(li, parentLi.nextSibling);
               if (parentList.children.length === 0) {
                 parentList.remove();
               }
               // Focus the moved item
-              const focusTarget = blockType === 'checkList' 
+              const focusTarget = blockType === 'checkList'
                 ? li.querySelector('.cb-checklist-content') as HTMLElement
                 : li;
               if (focusTarget) {
@@ -2510,7 +2867,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           } else {
             // Top-level empty item - check if it's the only item
             const items = listElement?.querySelectorAll(':scope > li');
-            
+
             if (items && items.length === 1) {
               // Only one item, transform the entire block to paragraph
               if (blockId) {
@@ -2522,18 +2879,18 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
               insertBlockAfter('paragraph', blockId || undefined);
             }
           }
-          
+
           emitChange();
           return;
         }
-        
+
         // Non-empty item - create new list item
         e.preventDefault();
         saveToHistoryImmediate(); // Use immediate save for structural change
-        
+
         const selection = window.getSelection();
         const range = selection?.getRangeAt(0);
-        
+
         // Get content after cursor
         let afterContent = '';
         if (range && editableContent) {
@@ -2545,49 +2902,49 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           temp.appendChild(fragment);
           afterContent = temp.innerHTML;
         }
-        
+
         // Create new list item
         const newLi = document.createElement('li');
         newLi.className = 'cb-list-item';
         newLi.setAttribute('data-item-id', generateId());
-        
+
         if (blockType === 'checkList') {
           const wrapper = document.createElement('div');
           wrapper.className = 'cb-checklist-wrapper';
-          
+
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.className = 'cb-checkbox';
           checkbox.setAttribute('tabindex', '-1');
-          
+
           const contentSpan = document.createElement('span');
           contentSpan.className = 'cb-checklist-content';
           contentSpan.setAttribute('contenteditable', 'true');
           contentSpan.innerHTML = afterContent;
-          
+
           wrapper.appendChild(checkbox);
           wrapper.appendChild(contentSpan);
           newLi.appendChild(wrapper);
-          
+
           li.after(newLi);
           contentSpan.focus();
           moveCursorToStart(contentSpan);
         } else {
           newLi.setAttribute('contenteditable', 'true');
           newLi.innerHTML = afterContent;
-          
+
           li.after(newLi);
           newLi.focus();
           moveCursorToStart(newLi);
         }
-        
+
         emitChange();
         return;
       }
-      
+
       e.preventDefault();
       saveToHistory();
-      
+
       // Create new paragraph after current block
       insertBlockAfter('paragraph', blockId || undefined);
       return;
@@ -2601,7 +2958,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         if (blockId) transformBlockType(blockId, 'paragraph');
         return;
       }
-      
+
       // Merge with previous block
       const prevBlock = block?.previousElementSibling as HTMLElement;
       if (prevBlock && prevBlock.classList.contains('cb-block')) {
@@ -2609,45 +2966,45 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         if (prevType !== 'divider' && prevType !== 'image' && prevType !== 'video') {
           e.preventDefault();
           saveToHistoryImmediate(); // Use immediate save for merge operation
-          
+
           const prevEditable = prevBlock.querySelector('[contenteditable="true"]') as HTMLElement;
           const currentContent = target.innerHTML;
-          
+
           if (prevEditable && currentContent) {
             prevEditable.innerHTML += currentContent;
           }
-          
+
           if (prevEditable) {
             moveCursorToEnd(prevEditable);
             prevEditable.focus();
           }
-          
+
           if (blockId) deleteBlockById(blockId);
         }
       }
       return;
     }
-    
+
     // Handle Delete/Backspace when entire editor is selected (Ctrl+A twice)
     if (e.key === 'Backspace' || e.key === 'Delete') {
       const selection = window.getSelection();
       if (!selection || !contentRef.current) return;
-      
+
       // Check if the entire editor content is selected
       const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-      if (range && 
-          range.startContainer === contentRef.current && 
-          range.endContainer === contentRef.current &&
-          range.startOffset === 0 &&
-          range.endOffset === contentRef.current.childNodes.length) {
+      if (range &&
+        range.startContainer === contentRef.current &&
+        range.endContainer === contentRef.current &&
+        range.startOffset === 0 &&
+        range.endOffset === contentRef.current.childNodes.length) {
         // Entire editor is selected - clear everything and create one empty paragraph
         e.preventDefault();
         saveToHistoryImmediate();
-        
+
         contentRef.current.innerHTML = '';
         const block = createBlockWithControls('paragraph');
         contentRef.current.appendChild(block);
-        
+
         // Focus the new empty block
         setTimeout(() => {
           const editable = block.querySelector('[contenteditable="true"]') as HTMLElement;
@@ -2655,7 +3012,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             editable.focus();
           }
         }, 0);
-        
+
         updateState();
         emitChange();
         return;
@@ -2710,25 +3067,25 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
    */
   const applyHashtagStyling = useCallback((element: HTMLElement) => {
     if (!element || element.getAttribute('contenteditable') !== 'true') return;
-    
+
     // Save cursor position before modification
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount) return;
-    
+
     const range = selection.getRangeAt(0);
     const cursorNode = range.startContainer;
     const cursorOffset = range.startOffset;
-    
+
     // Track the position relative to the element
     let charCount = 0;
     let savedOffset = -1;
-    
+
     const countCharsBeforeCursor = (node: Node): boolean => {
       if (node === cursorNode) {
         savedOffset = charCount + cursorOffset;
         return true;
       }
-      
+
       if (node.nodeType === Node.TEXT_NODE) {
         charCount += node.textContent?.length || 0;
       } else if (node.nodeType === Node.ELEMENT_NODE) {
@@ -2744,12 +3101,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-      
+
       return false;
     };
-    
+
     countCharsBeforeCursor(element);
-    
+
     // Get plain text content (excluding existing hashtag spans)
     const getText = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -2769,14 +3126,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
       return '';
     };
-    
+
     const plainText = getText(element);
-    
+
     // Match hashtags: # followed by alphanumeric/underscore characters (no spaces)
     // Hashtag ends at space, punctuation, or end of string
     const hashtagRegex = /#[\w\d_]+(?=\s|[.,!?;:]|$)/g;
     const matches = Array.from(plainText.matchAll(hashtagRegex));
-    
+
     if (matches.length === 0) {
       // No hashtags found, remove any existing hashtag styling
       const existingHashtags = element.querySelectorAll('.cb-hashtag');
@@ -2786,34 +3143,34 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       });
       return;
     }
-    
+
     // Build new HTML with hashtag spans
     const fragments: (string | HTMLElement)[] = [];
     let lastIndex = 0;
-    
+
     matches.forEach(match => {
       const matchText = match[0];
       const index = match.index!;
-      
+
       // Add text before hashtag
       if (index > lastIndex) {
         fragments.push(plainText.substring(lastIndex, index));
       }
-      
+
       // Create hashtag span
       const hashtagSpan = document.createElement('span');
       hashtagSpan.className = 'cb-hashtag';
       hashtagSpan.textContent = matchText;
       fragments.push(hashtagSpan);
-      
+
       lastIndex = index + matchText.length;
     });
-    
+
     // Add remaining text
     if (lastIndex < plainText.length) {
       fragments.push(plainText.substring(lastIndex));
     }
-    
+
     // Clear element and append fragments
     element.innerHTML = '';
     fragments.forEach(fragment => {
@@ -2823,14 +3180,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         element.appendChild(fragment);
       }
     });
-    
+
     // Restore cursor position
     if (savedOffset >= 0) {
       try {
         let currentOffset = 0;
         let targetNode: Node | null = null;
         let targetOffset = 0;
-        
+
         const findCursorPosition = (node: Node): boolean => {
           if (node.nodeType === Node.TEXT_NODE) {
             const nodeLength = node.textContent?.length || 0;
@@ -2852,7 +3209,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
               currentOffset += nodeLength;
               return false;
             }
-            
+
             for (let i = 0; i < node.childNodes.length; i++) {
               if (findCursorPosition(node.childNodes[i])) {
                 return true;
@@ -2861,7 +3218,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
           return false;
         };
-        
+
         if (findCursorPosition(element) && targetNode) {
           const newRange = document.createRange();
           newRange.setStart(targetNode, targetOffset);
@@ -2883,11 +3240,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       const block = target.closest('.cb-block');
       const blockType = block?.getAttribute('data-block-type');
       const blockId = block?.getAttribute('data-block-id');
-      
+
       // Only process markdown shortcuts for paragraph blocks
       if (blockType === 'paragraph' && blockId) {
         const text = target.textContent || '';
-        
+
         // Check for markdown patterns at the start of the block
         // Pattern: "- " or "* " for bullet list (with or without content)
         if (text.startsWith('- ') || text.startsWith('* ')) {
@@ -2896,7 +3253,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           transformBlockType(blockId, 'bulletList', { content });
           return;
         }
-        
+
         // Pattern: "1. " (or any number + period + space) for numbered list (with or without content)
         const numberedMatch = text.match(/^(\d+)\.\s(.*)$/);
         if (numberedMatch) {
@@ -2905,7 +3262,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           transformBlockType(blockId, 'numberedList', { content });
           return;
         }
-        
+
         // Pattern: "[] " for checklist (with or without content)
         if (text.startsWith('[] ')) {
           const content = text.slice(3);
@@ -2913,7 +3270,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           transformBlockType(blockId, 'checkList', { content });
           return;
         }
-        
+
         // Pattern: "> " for quote (with or without content)
         if (text.startsWith('> ')) {
           const content = text.slice(2);
@@ -2921,7 +3278,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           transformBlockType(blockId, 'quote', { content });
           return;
         }
-        
+
         // Pattern: "# " for heading 1 (with or without content)
         if (text.startsWith('# ') && !text.startsWith('## ')) {
           const content = text.slice(2);
@@ -2929,7 +3286,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           transformBlockType(blockId, 'heading', { level: 1, content });
           return;
         }
-        
+
         // Pattern: "## " for heading 2 (with or without content)
         if (text.startsWith('## ') && !text.startsWith('### ')) {
           const content = text.slice(3);
@@ -2937,7 +3294,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           transformBlockType(blockId, 'heading', { level: 2, content });
           return;
         }
-        
+
         // Pattern: "### " for heading 3 (with or without content)
         if (text.startsWith('### ')) {
           const content = text.slice(4);
@@ -2946,14 +3303,14 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           return;
         }
       }
-      
+
       // Apply hashtag styling to any block type (after markdown shortcuts are processed)
       if (e?.target instanceof HTMLElement) {
         const target = e.target;
         applyHashtagStyling(target);
       }
     }
-    
+
     updateState();
     emitChange();
     saveToHistory(); // Debounced save on content change
@@ -2965,7 +3322,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
    */
   const handleContainerKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (readOnly) return;
-    
+
     // Escape key - clear block selection
     if (e.key === 'Escape') {
       if (selectedBlockIds.size > 0) {
@@ -2978,25 +3335,25 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         return;
       }
     }
-    
+
     // Handle global shortcuts (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
     if (e.ctrlKey || e.metaKey) {
       // Ctrl+Shift+A - Select all blocks
       if (e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         e.stopPropagation();
-        
+
         const allBlocks = contentRef.current?.querySelectorAll('.cb-block');
         if (allBlocks && allBlocks.length > 0) {
           const allBlockIds = Array.from(allBlocks)
             .map(block => block.getAttribute('data-block-id'))
             .filter(id => id !== null) as string[];
-          
+
           const newSet = new Set(allBlockIds);
           selectedBlockIdsRef.current = newSet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
           setSelectedBlockIds(newSet);
           console.log('📦 Selected all', allBlockIds.length, 'blocks');
-          
+
           // Focus container to keep keyboard shortcuts active
           if (containerRef.current) {
             containerRef.current.focus();
@@ -3004,7 +3361,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
         return;
       }
-      
+
       if (e.key.toLowerCase() === 'z') {
         e.preventDefault();
         e.stopPropagation();
@@ -3015,7 +3372,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         }
         return;
       }
-      
+
       if (e.key.toLowerCase() === 'y') {
         e.preventDefault();
         e.stopPropagation();
@@ -3034,13 +3391,13 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // If clicking inside the editor but not on a contenteditable element,
     // focus the container so keyboard shortcuts work
     if (!containerRef.current) return;
-    
+
     const target = e.target as HTMLElement;
     const clickedContentEditable = target.closest('[contenteditable="true"]');
     const clickedBlock = target.closest('.cb-block');
     const clickedDragHandle = target.closest('.cb-block-drag');
     const clickedInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
-    
+
     // Clear selection if:
     // 1. Not holding Shift (multi-select modifier)
     // 2. Not clicking on a block or drag handle
@@ -3051,7 +3408,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
       setSelectedBlockIds(emptySet);
     }
-    
+
     // If not clicking on a contenteditable or input field, focus the container
     // CRITICAL FIX: Don't steal focus from INPUT/TEXTAREA elements
     if (!clickedContentEditable && !clickedInput) {
@@ -3070,35 +3427,35 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     if (selectedBlockIds.size > 0) {
       e.preventDefault();
       console.log('📋 Copying', selectedBlockIds.size, 'selected blocks');
-      
+
       // Get clean HTML from selected blocks
       const cleanHTML = getCleanSelectionHTML();
-      
+
       // Get plain text from selected blocks
       const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
       const selectedBlocks = allBlocks.filter(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
       const plainText = selectedBlocks.map(b => b.textContent || '').join('\n\n');
-      
+
       // Set clipboard data
       e.clipboardData.setData('text/html', cleanHTML);
       e.clipboardData.setData('text/plain', plainText);
       return;
     }
-    
+
     // Priority 2: Text selection
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount || selection.isCollapsed) return;
-    
+
     // Check if selection is within our editor
     const range = selection.getRangeAt(0);
     if (!contentRef.current?.contains(range.commonAncestorContainer)) return;
-    
+
     e.preventDefault();
-    
+
     // Get clean HTML without editor artifacts
     const cleanHTML = getCleanSelectionHTML();
     const plainText = selection.toString();
-    
+
     // Set both HTML and plain text in clipboard
     e.clipboardData.setData('text/html', cleanHTML);
     e.clipboardData.setData('text/plain', plainText);
@@ -3113,30 +3470,30 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     if (selectedBlockIds.size > 0) {
       e.preventDefault();
       console.log('✂️ Cutting', selectedBlockIds.size, 'selected blocks');
-      
+
       // Get clean HTML from selected blocks
       const cleanHTML = getCleanSelectionHTML();
-      
+
       // Get plain text from selected blocks
       const allBlocks = Array.from(contentRef.current?.querySelectorAll('.cb-block') || []);
       const selectedBlocks = allBlocks.filter(b => selectedBlockIds.has(b.getAttribute('data-block-id') || ''));
       const plainText = selectedBlocks.map(b => b.textContent || '').join('\n\n');
-      
+
       // Set clipboard data
       e.clipboardData.setData('text/html', cleanHTML);
       e.clipboardData.setData('text/plain', plainText);
-      
+
       // Delete selected blocks
       saveToHistoryImmediate();
       selectedBlockIds.forEach(blockId => {
         const block = contentRef.current?.querySelector(`[data-block-id="${blockId}"]`);
         block?.remove();
       });
-      
+
       const emptySet = new Set<string>();
       selectedBlockIdsRef.current = emptySet; // HIGH-PRIORITY FIX (Bug #4): Sync ref immediately
       setSelectedBlockIds(emptySet);
-      
+
       // Ensure at least one block remains
       if (contentRef.current && contentRef.current.children.length === 0) {
         const newBlock = createBlockWithControls('paragraph');
@@ -3146,30 +3503,30 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           editable?.focus();
         }, 0);
       }
-      
+
       updateState();
       emitChange();
       return;
     }
-    
+
     // Priority 2: Text selection
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount || selection.isCollapsed) return;
-    
+
     // Check if selection is within our editor
     const range = selection.getRangeAt(0);
     if (!contentRef.current?.contains(range.commonAncestorContainer)) return;
-    
+
     e.preventDefault();
-    
+
     // Get clean HTML without editor artifacts
     const cleanHTML = getCleanSelectionHTML();
     const plainText = selection.toString();
-    
+
     // Set clipboard data
     e.clipboardData.setData('text/html', cleanHTML);
     e.clipboardData.setData('text/plain', plainText);
-    
+
     // Delete the selection
     saveToHistoryImmediate(); // Use immediate save (was debounced before - bug!)
     document.execCommand('delete');
@@ -3183,64 +3540,64 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
    */
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (readOnly) return;
-    
+
     // Allow default paste behavior for input fields (like image URL input, video URL input, etc.)
     const target = e.target as HTMLElement;
-    
+
     console.log('🔍 PASTE EVENT DEBUG:', {
       tagName: target.tagName,
       className: target.className,
       isInput: target.tagName === 'INPUT',
       isTextarea: target.tagName === 'TEXTAREA',
     });
-    
+
     // Check if pasting into an input or textarea element
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
       console.log('✅ Allowing paste in input field:', target.className);
       // DO NOT call preventDefault - let browser handle it
       return;
     }
-    
+
     console.log('🚫 Preventing default paste (not an input field)');
     e.preventDefault();
     saveToHistoryImmediate(); // Use immediate save for paste operation
-    
+
     const html = e.clipboardData.getData('text/html');
     const plainText = e.clipboardData.getData('text/plain');
-    
+
     if (!html && !plainText) return;
-    
+
     console.log('📥 Pasting content, HTML length:', html.length, 'blocks selected:', selectedBlockIds.size);
-    
+
     // Parse HTML to detect blocks
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = html || plainText.replace(/\n/g, '<br>');
-    
+
     // Check if pasted content contains block-level elements
     const pastedBlocks = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre, hr, table, figure, details, aside, div.cb-callout, div.cb-code');
-    
+
     if (pastedBlocks.length > 0) {
       console.log('📦 Pasting', pastedBlocks.length, 'blocks');
-      
+
       // Multi-block paste - create actual blocks
       const currentBlock = document.activeElement?.closest('.cb-block') as HTMLElement;
       const currentBlockId = currentBlock?.getAttribute('data-block-id');
-      
+
       let previousBlockId = currentBlockId || undefined;
-      
+
       pastedBlocks.forEach((element) => {
         if (!(element instanceof HTMLElement)) return;
-        
+
         const blockType = detectBlockType(element);
         const blockData = extractBlockData(element, blockType);
-        
+
         // Create new block
         const newBlock = insertBlockAfter(blockType, previousBlockId, blockData);
         if (newBlock) {
           previousBlockId = newBlock.getAttribute('data-block-id') || undefined;
         }
       });
-      
+
       // Clear the current block if it was empty
       if (currentBlock) {
         const editable = currentBlock.querySelector('[contenteditable="true"]');
@@ -3251,7 +3608,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           }
         }
       }
-      
+
       // Clear multi-block selection after paste
       if (selectedBlockIds.size > 0) {
         console.log('🧹 Clearing multi-block selection after paste');
@@ -3262,7 +3619,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       const cleanHtml = sanitizePaste(e.clipboardData);
       document.execCommand('insertHTML', false, cleanHtml);
     }
-    
+
     updateState();
     emitChange();
   }, [readOnly, selectedBlockIds, saveToHistoryImmediate, insertBlockAfter, deleteBlockById, detectBlockType, extractBlockData, updateState, emitChange]);
@@ -3287,17 +3644,17 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   // Handle block selection from menu
   const handleBlockMenuSelect = useCallback((type: BlockType, data?: Record<string, any>, inline?: boolean) => {
     setShowBlockMenu(false);
-    
+
     // Handle inline elements (like date)
     if (inline) {
       if (type === 'date') {
         // Insert today's date inline
         const selection = window.getSelection();
         if (!selection || !selection.rangeCount) return;
-        
+
         const range = selection.getRangeAt(0);
         const today = new Date();
-        
+
         // Format date function (same as Toolbar)
         const formatDate = (date: Date): string => {
           const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -3305,43 +3662,43 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             'January', 'February', 'March', 'April', 'May', 'June',
             'July', 'August', 'September', 'October', 'November', 'December'
           ];
-          
+
           const dayName = days[date.getDay()];
           const day = date.getDate();
           const monthName = months[date.getMonth()];
           const year = date.getFullYear();
-          
+
           return `${dayName}, ${day} ${monthName} ${year}`;
         };
-        
+
         // Create date span element
         const dateSpan = document.createElement('span');
         dateSpan.className = 'cb-date-inline';
         dateSpan.setAttribute('data-date', today.toISOString());
         dateSpan.setAttribute('contenteditable', 'false');
         dateSpan.textContent = formatDate(today);
-        
+
         // If we have an active block, make sure we insert into its editable area
         if (activeBlockId) {
           const currentBlock = contentRef.current?.querySelector(`[data-block-id="${activeBlockId}"]`);
           const editable = currentBlock?.querySelector('[contenteditable="true"]');
-          
+
           if (editable) {
             // Focus the editable element first
             (editable as HTMLElement).focus();
-            
+
             // Get selection again after focusing
             const newSelection = window.getSelection();
             if (newSelection && newSelection.rangeCount > 0) {
               const newRange = newSelection.getRangeAt(0);
               newRange.deleteContents();
               newRange.insertNode(dateSpan);
-              
+
               // Add a space after the date
               const space = document.createTextNode(' ');
               newRange.setStartAfter(dateSpan);
               newRange.insertNode(space);
-              
+
               // Move cursor after the space
               newRange.setStartAfter(space);
               newRange.setEndAfter(space);
@@ -3353,7 +3710,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           // Insert at cursor
           range.deleteContents();
           range.insertNode(dateSpan);
-          
+
           // Move cursor after the date
           range.setStartAfter(dateSpan);
           range.setEndAfter(dateSpan);
@@ -3363,13 +3720,13 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
       return;
     }
-    
+
     // Normal block insertion
     if (activeBlockId) {
       // Check if current block is empty - if so, transform it
       const currentBlock = contentRef.current?.querySelector(`[data-block-id="${activeBlockId}"]`);
       const editable = currentBlock?.querySelector('[contenteditable="true"]');
-      
+
       if (editable && editable.textContent?.trim() === '') {
         // For headings with level data, we need to handle specially
         if (type === 'heading' && data?.level) {
@@ -3412,10 +3769,10 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   ].filter(Boolean).join(' ');
 
   return (
-    <div 
-      ref={containerRef} 
-      className={editorClasses} 
-      style={style} 
+    <div
+      ref={containerRef}
+      className={editorClasses}
+      style={style}
       data-editor-root
       tabIndex={0}
       onKeyDown={handleContainerKeyDown}
