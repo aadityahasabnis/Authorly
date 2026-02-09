@@ -107,7 +107,7 @@ export function isSelectionInElement(element: HTMLElement): boolean {
 /**
  * Check if selection spans multiple blocks
  */
-export function isMultiBlockSelection(container: HTMLElement): boolean {
+export function isMultiBlockSelection(_container: HTMLElement): boolean {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
     return false;

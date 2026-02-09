@@ -221,7 +221,7 @@ export function initDragDrop(options: DragDropOptions) {
   }
 
   // Handle drag end
-  function handleDragEnd(e: MouseEvent | TouchEvent) {
+  function handleDragEnd(_e: MouseEvent | TouchEvent) {
     if (!state.isDragging || !state.draggedElement) {
       cleanup();
       return;

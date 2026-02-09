@@ -100,7 +100,7 @@ export const tableBlock: BlockDefinition = {
     const rows: TableRow[] = [];
     let hasHeader = false;
 
-    table?.querySelectorAll('tr').forEach((tr, rowIndex) => {
+    table?.querySelectorAll('tr').forEach((tr, _rowIndex) => {
       const cells: TableCell[] = [];
       
       tr.querySelectorAll('th, td').forEach(cell => {
@@ -164,6 +164,13 @@ export function addTableRow(wrapper: HTMLElement, afterIndex?: number): void {
   if (!table) return;
 
   const rows = table.querySelectorAll('tr');
+  
+  // PROFESSIONAL FIX: Validate afterIndex bounds
+  if (afterIndex !== undefined && (afterIndex < 0 || afterIndex >= rows.length)) {
+    console.warn(`Invalid row index ${afterIndex}, adding at end instead`);
+    afterIndex = undefined;
+  }
+  
   const colCount = rows[0]?.querySelectorAll('th, td').length || 3;
 
   const tr = document.createElement('tr');
@@ -190,7 +197,17 @@ export function addTableColumn(wrapper: HTMLElement, afterIndex?: number): void 
   const table = wrapper.querySelector('table');
   if (!table) return;
 
-  table.querySelectorAll('tr').forEach((tr, rowIndex) => {
+  const rows = table.querySelectorAll('tr');
+  if (rows.length === 0) return;
+  
+  // PROFESSIONAL FIX: Validate afterIndex bounds
+  const firstRowCellCount = rows[0].querySelectorAll('th, td').length;
+  if (afterIndex !== undefined && (afterIndex < 0 || afterIndex >= firstRowCellCount)) {
+    console.warn(`Invalid column index ${afterIndex}, adding at end instead`);
+    afterIndex = undefined;
+  }
+
+  rows.forEach((tr, rowIndex) => {
     const cells = tr.querySelectorAll('th, td');
     const isHeader = rowIndex === 0 && cells[0]?.tagName === 'TH';
     
@@ -215,8 +232,14 @@ export function deleteTableRow(wrapper: HTMLElement, index: number): boolean {
 
   const rows = table.querySelectorAll('tr');
   if (rows.length <= 1) return false; // Keep at least one row
+  
+  // PROFESSIONAL FIX: Validate index bounds
+  if (index < 0 || index >= rows.length) {
+    console.warn(`Invalid row index ${index} for deletion`);
+    return false;
+  }
 
-  rows[index]?.remove();
+  rows[index].remove();
   return true;
 }
 
@@ -230,10 +253,18 @@ export function deleteTableColumn(wrapper: HTMLElement, index: number): boolean 
   const rows = table.querySelectorAll('tr');
   const colCount = rows[0]?.querySelectorAll('th, td').length || 0;
   if (colCount <= 1) return false; // Keep at least one column
+  
+  // PROFESSIONAL FIX: Validate index bounds
+  if (index < 0 || index >= colCount) {
+    console.warn(`Invalid column index ${index} for deletion`);
+    return false;
+  }
 
   rows.forEach(tr => {
     const cells = tr.querySelectorAll('th, td');
-    cells[index]?.remove();
+    if (cells[index]) {
+      cells[index].remove();
+    }
   });
 
   return true;

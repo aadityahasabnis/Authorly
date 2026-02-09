@@ -37,8 +37,13 @@ export default defineConfig(({ mode }) => {
           },
         },
         cssCodeSplit: false,
-        sourcemap: true,
+        // PROFESSIONAL FIX: Don't include source maps in published package
+        // Users don't need them, and they add 1.6MB of unnecessary weight
+        sourcemap: false,
         minify: 'esbuild',
+        // PROFESSIONAL FIX: Optimize for smaller bundle size
+        target: 'es2020',
+        cssMinify: true,
       },
       resolve: {
         alias: {

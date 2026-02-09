@@ -5,14 +5,13 @@
 import type { EditorInstance, InlineFormat, BlockType } from './types';
 import { blockRegistry } from './block-registry';
 import {
-  getSelectionState,
   wrapSelection,
   unwrapElement,
   findElementsInSelection,
   moveCursorToEnd,
   moveCursorToStart,
 } from './selection';
-import { getBlockFromChild, insertAfter, insertBefore } from '../utils/helpers';
+import { insertAfter, insertBefore } from '../utils/helpers';
 
 // Inline format tag mappings
 const FORMAT_TAGS: Record<InlineFormat, string> = {
@@ -80,7 +79,7 @@ export function toggleFormat(
 /**
  * Apply bold format
  */
-export function toggleBold(container: HTMLElement): void {
+export function toggleBold(_container: HTMLElement): void {
   // Try execCommand first (better cross-browser support)
   document.execCommand('bold', false);
 }
@@ -88,21 +87,21 @@ export function toggleBold(container: HTMLElement): void {
 /**
  * Apply italic format
  */
-export function toggleItalic(container: HTMLElement): void {
+export function toggleItalic(_container: HTMLElement): void {
   document.execCommand('italic', false);
 }
 
 /**
  * Apply underline format
  */
-export function toggleUnderline(container: HTMLElement): void {
+export function toggleUnderline(_container: HTMLElement): void {
   document.execCommand('underline', false);
 }
 
 /**
  * Apply strikethrough format
  */
-export function toggleStrikethrough(container: HTMLElement): void {
+export function toggleStrikethrough(_container: HTMLElement): void {
   document.execCommand('strikeThrough', false);
 }
 
@@ -188,7 +187,8 @@ export function insertLink(container: HTMLElement, url: string, text?: string): 
       newRange.selectNodeContents(link);
       selection.removeAllRanges();
       selection.addRange(newRange);
-    } catch (error) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_error) {
       // Fallback to execCommand if custom wrapping fails
       document.execCommand('createLink', false, url);
       
@@ -302,7 +302,7 @@ export function setAlignment(
 /**
  * Clear all formatting
  */
-export function clearFormatting(container: HTMLElement): void {
+export function clearFormatting(_container: HTMLElement): void {
   document.execCommand('removeFormat', false);
 }
 
@@ -426,7 +426,7 @@ export function duplicateBlock(block: HTMLElement): HTMLElement {
 export function transformBlock(
   block: HTMLElement,
   newType: BlockType,
-  container: HTMLElement
+  _container: HTMLElement
 ): HTMLElement | null {
   const newBlock = blockRegistry.transformBlock(block, newType);
   if (!newBlock) return null;
@@ -470,7 +470,7 @@ export function mergeBlocks(
  */
 export function splitBlock(
   block: HTMLElement,
-  container: HTMLElement
+  _container: HTMLElement
 ): HTMLElement | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;

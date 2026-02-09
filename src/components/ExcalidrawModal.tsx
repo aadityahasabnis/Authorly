@@ -9,9 +9,10 @@ import '@excalidraw/excalidraw/index.css';
 import { X, Check } from 'lucide-react';
 
 // Type declarations for Excalidraw - using any for now to avoid import path issues
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ExcalidrawElement = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AppState = any;
-type BinaryFiles = any;
 
 interface ExcalidrawModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const ExcalidrawModal: React.FC<ExcalidrawModalProps> = ({
   initialAppState = {},
   darkMode = false,
 }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [excalidrawAPI, setExcalidrawAPI] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 

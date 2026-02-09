@@ -6,7 +6,9 @@ import type { BlockDefinition } from '../core/types';
 import { generateId } from '../utils/helpers';
 
 // Type declarations for Excalidraw - using any for now to avoid import path issues
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ExcalidrawElement = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AppState = any;
 
 interface ExcalidrawData {

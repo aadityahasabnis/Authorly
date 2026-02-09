@@ -115,8 +115,9 @@ function sanitizeNode(
   depth: number
 ): void {
   if (depth > (options.maxDepth || 10)) {
-    // Too deep, remove everything
-    node.textContent = node.textContent;
+    // Too deep, strip all HTML and keep only text content
+    const textOnly = node.textContent || '';
+    node.textContent = textOnly;
     return;
   }
 
@@ -295,7 +296,6 @@ function sanitizeAttributes(
  * Sanitize inline styles
  */
 function sanitizeStyles(element: HTMLElement): void {
-  const style = element.style;
   const cssText = element.getAttribute('style') || '';
   
   // Parse and filter CSS properties
@@ -329,7 +329,7 @@ function sanitizeStyles(element: HTMLElement): void {
 function copyAllowedAttributes(
   source: HTMLElement,
   target: HTMLElement,
-  options: SanitizeOptions
+  _options: SanitizeOptions
 ): void {
   const tagName = target.tagName.toLowerCase();
   const allowedGlobal = ALLOWED_ATTRIBUTES['*'] || new Set();

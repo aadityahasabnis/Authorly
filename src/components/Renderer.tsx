@@ -1,21 +1,21 @@
 /**
- * ContentBlocksRenderer - Renders HTML content with all styles included
+ * AuthorlyRenderer - Renders HTML content with all styles included
  * A self-contained component that displays editor output beautifully
  * No external CSS required - just import and use
  * 
  * @example
  * ```tsx
- * import { ContentBlocksRenderer } from 'authorly';
+ * import { AuthorlyRenderer } from 'authorly';
  * 
  * function BlogPost({ content }) {
- *   return <ContentBlocksRenderer html={content} darkMode={false} />;
+ *   return <AuthorlyRenderer html={content} darkMode={false} />;
  * }
  * ```
  */
 
 import React, { useMemo } from 'react';
 
-export interface ContentBlocksRendererProps {
+export interface AuthorlyRendererProps {
   /** HTML content to render */
   html: string;
   /** Enable dark mode */
@@ -33,6 +33,10 @@ export interface ContentBlocksRendererProps {
   /** Class prefix for custom styling */
   classPrefix?: string;
 }
+
+/** @deprecated Use AuthorlyRendererProps instead */
+export type ContentBlocksRendererProps = AuthorlyRendererProps;
+
 
 // Escape HTML for code display
 function escapeHtml(text: string): string {
@@ -374,18 +378,18 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
 }
 
 /**
- * ContentBlocksRenderer - Renders HTML content with beautiful styling
+ * AuthorlyRenderer - Renders HTML content with beautiful styling
  * 
  * @example
  * ```tsx
- * import { ContentBlocksRenderer } from 'authorly';
+ * import { AuthorlyRenderer } from 'authorly';
  * 
  * function Preview({ html }) {
- *   return <ContentBlocksRenderer html={html} darkMode={false} />;
+ *   return <AuthorlyRenderer html={html} darkMode={false} />;
  * }
  * ```
  */
-export const ContentBlocksRenderer: React.FC<ContentBlocksRendererProps> = ({
+export const AuthorlyRenderer: React.FC<AuthorlyRendererProps> = ({
   html,
   darkMode = false,
   className = '',
@@ -426,4 +430,8 @@ export const ContentBlocksRenderer: React.FC<ContentBlocksRendererProps> = ({
   );
 };
 
-export default ContentBlocksRenderer;
+/** @deprecated Use AuthorlyRenderer instead */
+export const ContentBlocksRenderer = AuthorlyRenderer;
+
+export default AuthorlyRenderer;
+

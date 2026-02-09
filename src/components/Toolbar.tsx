@@ -4,7 +4,20 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { ToolbarProps, InlineFormat, BlockType } from '../core/types';
+import type { ToolbarProps, BlockType } from '../core/types';
+import {
+  toggleBold,
+  toggleItalic,
+  toggleUnderline,
+  toggleStrikethrough,
+  toggleInlineCode,
+  insertLink,
+  removeLink,
+  setTextColor,
+  setHighlightColor,
+  setAlignment,
+  clearFormatting,
+} from '../core/commands';
 import {
   Bold,
   Italic,
@@ -16,7 +29,6 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
-  AlignJustify,
   Undo,
   Redo,
   List,
@@ -39,7 +51,6 @@ import {
   AlertCircle,
   Palette,
   X,
-  ExternalLink,
   Edit3,
   Trash2,
   Calendar,
@@ -51,20 +62,6 @@ import {
   ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
-import {
-  toggleBold,
-  toggleItalic,
-  toggleUnderline,
-  toggleStrikethrough,
-  toggleInlineCode,
-  insertLink,
-  removeLink,
-  setHighlightColor,
-  setTextColor,
-  clearFormatting,
-  setAlignment,
-} from '../core/commands';
-import { isFormatActive } from '../core/commands';
 import { getBlockFromChild } from '../utils/helpers';
 
 interface ToolbarButton {
@@ -652,8 +649,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     }
   }, [linkPreview]);
 
-  // Handle link preview - visit link
-  const handleVisitLink = useCallback(() => {
+  // Handle link preview - visit link (reserved for future use)
+  const _handleVisitLink = useCallback(() => {
     if (linkPreview) {
       window.open(linkPreview.url, '_blank', 'noopener,noreferrer');
     }
@@ -1094,6 +1091,7 @@ ${html}
   if (!editor) return null;
 
   // Helper to transform or insert block
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleBlockAction = (type: BlockType, data?: Record<string, any>) => {
     const activeElement = document.activeElement;
     const block = activeElement?.closest('.cb-block');
@@ -1104,6 +1102,7 @@ ${html}
     if (blockId && currentType === 'paragraph' && editable && !editable.textContent?.trim()) {
       editor.transformBlock(block as HTMLElement, type, data);
     } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       editor.insertBlock(type, data as any);
     }
   };
@@ -1581,7 +1580,7 @@ ${html}
                         value={timePickerState.hour.toString().padStart(2, '0')}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\D/g, '');
-                          let num = parseInt(val, 10);
+                          const num = parseInt(val, 10);
                           if (val === '') {
                             setTimePickerState({ ...timePickerState, hour: 12 });
                           } else if (num >= 1 && num <= 12) {
@@ -1638,7 +1637,7 @@ ${html}
                         value={timePickerState.minute.toString().padStart(2, '0')}
                         onChange={(e) => {
                           const val = e.target.value.replace(/\D/g, '');
-                          let num = parseInt(val, 10);
+                          const num = parseInt(val, 10);
                           if (val === '') {
                             setTimePickerState({ ...timePickerState, minute: 0 });
                           } else if (num >= 0 && num <= 59) {
@@ -2031,7 +2030,7 @@ ${html}
                   value={timePickerState.hour.toString().padStart(2, '0')}
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '');
-                    let num = parseInt(val, 10);
+                    const num = parseInt(val, 10);
                     if (val === '') {
                       setTimePickerState({ ...timePickerState, hour: 12 });
                     } else if (num >= 1 && num <= 12) {
@@ -2088,7 +2087,7 @@ ${html}
                   value={timePickerState.minute.toString().padStart(2, '0')}
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, '');
-                    let num = parseInt(val, 10);
+                    const num = parseInt(val, 10);
                     if (val === '') {
                       setTimePickerState({ ...timePickerState, minute: 0 });
                     } else if (num >= 0 && num <= 59) {

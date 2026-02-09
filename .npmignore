@@ -1,0 +1,52 @@
+# Source files
+src/
+test/
+tests/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Build configs
+vite.config.ts
+vite.config.d.ts
+tsconfig.json
+eslint.config.js
+.eslintrc*
+.prettierrc*
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+node_modules/
+coverage/
+
+# Source maps (should not be in package)
+*.map
+
+# Documentation that's not needed in package
+docs/
+examples/
+demo/
+
+# Internal documentation (keep in git, exclude from package)
+.md/
+todos.md
+todos-detailed.md
+bugs-remained.md
+
+# CI/CD
+.travis.yml
+.gitlab-ci.yml
+.circleci/
+.github/
+
+# Other
+.DS_Store
+.env*
+*.log
+yarn.lock
+pnpm-lock.yaml
+bun.lockb

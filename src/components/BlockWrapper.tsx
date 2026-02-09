@@ -31,7 +31,7 @@ interface BlockWrapperProps {
 export const BlockWrapper: React.FC<BlockWrapperProps> = ({
   children,
   blockId,
-  blockType,
+  blockType: _blockType, // Reserved for future styling
   isActive = false,
   onAddBlock,
   onDeleteBlock,

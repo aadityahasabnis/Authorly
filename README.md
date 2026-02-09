@@ -20,7 +20,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/React-17%2B-61dafb?style=flat-square&logo=react" alt="React 17+" />
   <img src="https://img.shields.io/badge/TypeScript-Ready-3178c6?style=flat-square&logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Size-~30kb-green?style=flat-square" alt="Bundle Size" />
+  <a href="https://bundlephobia.com/package/authorly-editor"><img src="https://img.shields.io/bundlephobia/min/authorly-editor?style=flat-square&label=size" alt="Bundle Size" /></a>
+  <a href="https://bundlephobia.com/package/authorly-editor"><img src="https://img.shields.io/bundlephobia/minzip/authorly-editor?style=flat-square&label=gzipped" alt="Gzipped Size" /></a>
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT License" />
 </p>
 
@@ -32,7 +33,7 @@
 |---------|----------|---------------|
 | **Output** | Pure semantic HTML | JSON AST / Custom format |
 | **Dependencies** | React + Lucide icons | Heavy frameworks |
-| **Bundle size** | ~30kb gzipped | 100kb+ |
+| **Bundle size** | 256KB gzipped | 600KB+ |
 | **Learning curve** | Minutes | Hours/Days |
 | **Database storage** | Just HTML string | Complex serialization |
 
@@ -52,19 +53,23 @@
 ## Features
 
 - **Clean HTML Output** - Pure semantic HTML, no proprietary formats
-- **13+ Block Types** - Paragraphs, headings, lists, code, tables, images, videos, and more
+- **15+ Block Types** - Paragraphs, headings, lists, code, tables, images, videos, callouts, accordions, and more
 - **Cloud Image Uploads** - Built-in support for Cloudinary, AWS S3, and custom handlers
+- **Professional Undo/Redo** - Reliable history management with cursor restoration
 - **Dark Mode** - Beautiful dark theme out of the box
 - **TypeScript Ready** - Full type definitions included
-- **Lightweight** - Only ~30kb gzipped
+- **Lightweight** - Only 256KB gzipped (ESM + CSS)
 - **Keyboard Shortcuts** - Efficient editing with familiar shortcuts
 - **Table of Contents** - Auto-generate navigation from headings
 - **Accessibility** - WCAG compliant with ARIA labels
-- **Zero Dependencies** - Only React as a peer dependency
+- **Security Hardened** - XSS protection and input validation
+- **Zero Runtime Dependencies** - Only React as peer dependency
 
 ---
 
 ## Installation
+
+### From NPM (Recommended)
 
 ```bash
 npm install authorly-editor
@@ -78,18 +83,31 @@ yarn add authorly-editor
 pnpm add authorly-editor
 ```
 
+### From GitHub Packages
+
+```bash
+npm install @aadityahasabnis/authorly
+```
+
+**Import styles in your app:**
+
+```tsx
+import 'authorly-editor/styles.css';
+```
+
 ---
 
 ## Quick Start
 
 ```tsx
-import { ContentBlocksEditor } from 'authorly-editor';
+import { AuthorlyEditor } from 'authorly-editor';
+import 'authorly-editor/styles.css';
 
 function App() {
   const [content, setContent] = useState('<p>Hello World!</p>');
 
   return (
-    <ContentBlocksEditor
+    <AuthorlyEditor
       initialContent={content}
       onChange={setContent}
     />
@@ -99,18 +117,21 @@ function App() {
 
 That's it. No configuration needed.
 
+> **Backward Compatibility:** The old `ContentBlocksEditor` name still works for existing users.
+
 ---
 
 ## Components
 
-### 1. ContentBlocksEditor
+### 1. AuthorlyEditor
 
 The main editor component for creating and editing content.
 
 ```tsx
-import { ContentBlocksEditor } from 'authorly-editor';
+import { AuthorlyEditor } from 'authorly-editor';
+import 'authorly-editor/styles.css';
 
-<ContentBlocksEditor
+<AuthorlyEditor
   initialContent="<p>Start writing...</p>"
   onChange={(html) => console.log(html)}
   onSave={(html) => saveToDatabase(html)}
@@ -120,36 +141,39 @@ import { ContentBlocksEditor } from 'authorly-editor';
 />
 ```
 
-### 2. ContentBlocksRenderer
+### 2. AuthorlyRenderer
 
 Display saved HTML content with beautiful styling. No editor overhead.
 
 ```tsx
-import { ContentBlocksRenderer } from 'authorly-editor';
+import { AuthorlyRenderer } from 'authorly-editor';
+import 'authorly-editor/styles.css';
 
-<ContentBlocksRenderer
+<AuthorlyRenderer
   html={savedContent}
   darkMode={false}
   enableCodeCopy={true}
 />
 ```
 
-### 3. TableOfContents
+### 3. AuthorlyTableOfContents
 
 Auto-generate navigation from your content headings.
 
 ```tsx
-import { TableOfContents, ContentBlocksRenderer } from 'authorly-editor';
+import { AuthorlyTableOfContents, AuthorlyRenderer } from 'authorly-editor';
 
 <div style={{ display: 'flex' }}>
   <aside style={{ width: 200 }}>
-    <TableOfContents html={content} title="Contents" />
+    <AuthorlyTableOfContents html={content} title="Contents" />
   </aside>
   <main>
-    <ContentBlocksRenderer html={content} enableHeadingIds={true} />
+    <AuthorlyRenderer html={content} enableHeadingIds={true} />
   </main>
 </div>
 ```
+
+> **Note:** Old component names (`ContentBlocksEditor`, `ContentBlocksRenderer`, `TableOfContents`) are still supported for backward compatibility.
 
 ---
 
@@ -170,6 +194,9 @@ import { TableOfContents, ContentBlocksRenderer } from 'authorly-editor';
 | **Divider** | Horizontal rule | `<hr>` |
 | **Callout** | Info/Warning/Error | `<aside>` |
 | **Accordion** | Collapsible section | `<details><summary>` |
+| **Date** | Date picker | `<time>` |
+| **Link Preview** | URL preview card | `<a>` |
+| **Excalidraw** | Drawing canvas | `<figure>` |
 
 ---
 
@@ -194,7 +221,7 @@ import { TableOfContents, ContentBlocksRenderer } from 'authorly-editor';
 
 ## API Reference
 
-### ContentBlocksEditor Props
+### AuthorlyEditor Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
@@ -225,14 +252,14 @@ Access editor methods using a ref:
 
 ```tsx
 import { useRef } from 'react';
-import { ContentBlocksEditor, EditorRef } from 'authorly-editor';
+import { AuthorlyEditor, EditorRef } from 'authorly-editor';
 
 function MyEditor() {
   const editorRef = useRef<EditorRef>(null);
 
   return (
     <>
-      <ContentBlocksEditor ref={editorRef} />
+      <AuthorlyEditor ref={editorRef} />
       <button onClick={() => console.log(editorRef.current?.getHTML())}>
         Get HTML
       </button>
@@ -251,7 +278,7 @@ function MyEditor() {
 | `insertBlock(type, data?)` | Inserts a new block |
 | `getEditor()` | Returns the full editor instance |
 
-### ContentBlocksRenderer Props
+### AuthorlyRenderer Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
@@ -263,7 +290,7 @@ function MyEditor() {
 | `className` | `string` | `''` | Custom class name |
 | `style` | `CSSProperties` | - | Custom styles |
 
-### TableOfContents Props
+### AuthorlyTableOfContents Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
@@ -285,10 +312,11 @@ function MyEditor() {
 ```tsx
 import { useState, useRef } from 'react';
 import { 
-  ContentBlocksEditor, 
-  ContentBlocksRenderer,
+  AuthorlyEditor, 
+  AuthorlyRenderer,
   EditorRef 
 } from 'authorly-editor';
+import 'authorly-editor/styles.css';
 
 function BlogEditor() {
   const editorRef = useRef<EditorRef>(null);
@@ -309,9 +337,9 @@ function BlogEditor() {
       </button>
 
       {showPreview ? (
-        <ContentBlocksRenderer html={content} />
+        <AuthorlyRenderer html={content} />
       ) : (
-        <ContentBlocksEditor
+        <AuthorlyEditor
           ref={editorRef}
           initialContent={content}
           onChange={setContent}
@@ -327,22 +355,23 @@ function BlogEditor() {
 
 ```tsx
 import { 
-  ContentBlocksRenderer, 
-  TableOfContents 
+  AuthorlyRenderer, 
+  AuthorlyTableOfContents 
 } from 'authorly-editor';
+import 'authorly-editor/styles.css';
 
 function DocsPage({ content }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '2rem' }}>
       <aside style={{ position: 'sticky', top: '1rem', height: 'fit-content' }}>
-        <TableOfContents 
+        <AuthorlyTableOfContents 
           html={content} 
           title="On this page"
           maxLevel={3}
         />
       </aside>
       <main>
-        <ContentBlocksRenderer 
+        <AuthorlyRenderer 
           html={content}
           enableHeadingIds={true}
           enableCodeCopy={true}
@@ -356,7 +385,7 @@ function DocsPage({ content }) {
 ### Image Uploads with Cloudinary
 
 ```tsx
-import { ContentBlocksEditor, createCloudinaryConfig } from 'authorly-editor';
+import { AuthorlyEditor, createCloudinaryConfig } from 'authorly-editor';
 
 function Editor() {
   const [content, setContent] = useState('');
@@ -370,7 +399,7 @@ function Editor() {
   });
 
   return (
-    <ContentBlocksEditor
+    <AuthorlyEditor
       initialContent={content}
       onChange={setContent}
       imageUploadConfig={uploadConfig}
@@ -388,7 +417,7 @@ See [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-up
 
 ```tsx
 import { useState } from 'react';
-import { ContentBlocksEditor } from 'authorly-editor';
+import { AuthorlyEditor } from 'authorly-editor';
 
 function ThemedEditor() {
   const [darkMode, setDarkMode] = useState(false);
@@ -402,7 +431,7 @@ function ThemedEditor() {
       <button onClick={() => setDarkMode(!darkMode)}>
         Toggle Theme
       </button>
-      <ContentBlocksEditor darkMode={darkMode} />
+      <AuthorlyEditor darkMode={darkMode} />
     </div>
   );
 }
@@ -497,10 +526,14 @@ import type {
   EditorInstance,
   BlockType,
   BlockData,
+  AuthorlyEditorProps,
+  AuthorlyRendererProps,
+  AuthorlyTableOfContentsProps,
+  TocItem,
+  // Legacy names still available:
   ContentBlocksEditorProps,
   ContentBlocksRendererProps,
   TableOfContentsProps,
-  TocItem,
 } from 'authorly-editor';
 ```
 
@@ -518,19 +551,19 @@ const handleSave = async (html: string) => {
   await db.posts.create({ content: html });
 };
 
-<ContentBlocksEditor onSave={handleSave} />
+<AuthorlyEditor onSave={handleSave} />
 ```
 </details>
 
 <details>
 <summary><strong>How do I display saved content?</strong></summary>
 
-Use the `ContentBlocksRenderer` component:
+Use the `AuthorlyRenderer` component:
 
 ```tsx
 const post = await db.posts.findOne(id);
 
-<ContentBlocksRenderer html={post.content} />
+<AuthorlyRenderer html={post.content} />
 ```
 </details>
 
@@ -552,14 +585,14 @@ Not built-in. For real-time collaboration, you'd need to integrate with a servic
 Authorly includes built-in support for cloud uploads! Configure Cloudinary, S3, or custom handlers:
 
 ```tsx
-import { ContentBlocksEditor, createCloudinaryConfig } from 'authorly-editor';
+import { AuthorlyEditor, createCloudinaryConfig } from 'authorly-editor';
 
 const uploadConfig = createCloudinaryConfig({
   cloudName: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
   uploadPreset: process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET,
 });
 
-<ContentBlocksEditor imageUploadConfig={uploadConfig} />
+<AuthorlyEditor imageUploadConfig={uploadConfig} />
 ```
 
 See the [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-uploads) for Cloudinary, S3, and custom upload examples.

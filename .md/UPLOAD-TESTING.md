@@ -1,186 +1,286 @@
 # Image Upload Testing Guide
 
-This guide will help you test the cloud image upload feature in the Authorly editor.
+Quick guide to test cloud image upload in Authorly.
 
-## Prerequisites
+---
 
-1. **Cloudinary Account** (Free tier available)
-   - Sign up at https://cloudinary.com
-   - Get your credentials from the dashboard
+## Option 1: Cloudinary (Recommended for Testing)
 
-## Setup Steps
+**No backend needed** - easiest setup!
 
-### 1. Configure Cloudinary
+### Setup
 
-1. Log in to your Cloudinary account
-2. Go to **Settings** → **Upload**
-3. Scroll to **Upload presets**
-4. Click **Add upload preset**
-5. Configure:
-   - **Preset name**: `authorly-unsigned`
-   - **Signing mode**: **Unsigned** (important!)
-   - **Folder**: Leave blank or set a default folder
-   - **Access mode**: Public (default)
-6. Save the preset
+1. **Sign up**: https://cloudinary.com (free tier)
+2. **Create upload preset**:
+   - Go to Settings → Upload
+   - Add upload preset
+   - Name: `authorly-unsigned`
+   - Mode: **Unsigned** (important!)
+   - Save
 
-### 2. Add Credentials to .env
+3. **Get credentials** from dashboard:
+   - Cloud name
+   - Upload preset name
 
-1. Open `.env` in the `authorly` folder
-2. Add your credentials:
+### Configure
 
-```env
-VITE_CLOUDINARY_CLOUD_NAME=your-cloud-name-here
-VITE_CLOUDINARY_UPLOAD_PRESET=authorly-unsigned
-VITE_CLOUDINARY_FOLDER=authorly-test
-VITE_MAX_UPLOAD_SIZE_MB=10
+```typescript
+import { AuthorlyEditor, createCloudinaryConfig } from 'authorly-editor';
+
+const uploadConfig = createCloudinaryConfig({
+  cloudName: 'your-cloud-name',
+  uploadPreset: 'authorly-unsigned',
+  folder: 'test-images', // optional
+  maxSizeMB: 10,
+});
+
+<AuthorlyEditor imageUploadConfig={uploadConfig} />
 ```
 
-Replace `your-cloud-name-here` with your actual Cloudinary cloud name (found in dashboard).
+### Test
 
-### 3. Start the Dev Server
+1. Insert image block (`/image`)
+2. Upload an image
+3. Watch progress bar
+4. Image appears with Cloudinary URL
+5. Check Cloudinary dashboard
 
-```bash
-cd authorly
-npm run dev
+**Features**:
+- ✅ Auto-optimization (q_auto, f_auto)
+- ✅ Responsive srcset (5 breakpoints)
+- ✅ No backend needed
+- ✅ Global CDN
+
+---
+
+## Option 2: AWS S3
+
+**Requires backend** - more setup but more control.
+
+### Setup
+
+See [S3-UPLOAD-GUIDE.md](./S3-UPLOAD-GUIDE.md) for detailed instructions.
+
+**Quick version**:
+1. Create S3 bucket
+2. Set CORS policy
+3. Create backend endpoint for presigned URLs
+4. Configure Authorly
+
+```typescript
+import { AuthorlyEditor, createS3Config } from 'authorly-editor';
+
+const uploadConfig = createS3Config({
+  region: 'us-east-1',
+  bucket: 'my-bucket',
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  apiEndpoint: '/api/s3/presigned-url',
+  maxSizeMB: 10,
+});
+
+<AuthorlyEditor imageUploadConfig={uploadConfig} />
 ```
 
-The test page will open at `http://localhost:5173`
+**Features**:
+- ✅ Lower cost at scale
+- ✅ Full control
+- ✅ CloudFront CDN support
+- ⚠️ Requires backend
 
-## Testing the Upload Feature
+---
 
-### Test 1: Basic Image Upload
+## Option 3: Base64 Fallback
 
-1. Open the test page
-2. Look for the upload status indicator:
-   - **Green** = Cloud upload enabled
-   - **Yellow** = Not configured (using base64 fallback)
-3. In the editor, type `/image` and press Enter
-4. Click the image placeholder or drag & drop an image
-5. Watch the upload progress bar
-6. Verify the image appears in the editor
+**No configuration** - for development only.
 
-### Test 2: Drag & Drop
+```typescript
+<AuthorlyEditor 
+  // No imageUploadConfig = base64 fallback
+/>
+```
 
-1. Drag an image file from your file explorer
-2. Drop it directly into the editor
-3. Verify upload progress is shown
-4. Check that the image is inserted
+**Features**:
+- ✅ Zero setup
+- ✅ Works immediately
+- ⚠️ Large HTML size
+- ⚠️ Not for production
 
-### Test 3: Large Files
+Console shows: "No imageUploadConfig provided. Using base64 fallback."
 
-1. Try uploading a large image (close to 10MB)
-2. Verify progress bar updates smoothly
-3. Check upload completes successfully
+---
 
-### Test 4: Error Handling
+## Testing Checklist
 
-1. Try uploading a non-image file (e.g., .pdf)
-2. Verify error message is displayed
-3. Try uploading with incorrect credentials in .env
-4. Verify appropriate error handling
+### Basic Upload
+- [ ] Image uploads successfully
+- [ ] Progress bar shows
+- [ ] Image displays in editor
+- [ ] No console errors
 
-### Test 5: Multiple Images
+### HTML Output
+- [ ] Click "Get HTML"
+- [ ] Check image URL (Cloudinary/S3/base64)
+- [ ] Verify responsive attributes:
+  - `srcset` (Cloudinary only)
+  - `sizes` attribute
+  - `width` and `height`
+  - `alt` text
 
-1. Upload multiple images in sequence
-2. Verify each upload completes before starting next
-3. Check all images are displayed correctly
+### Error Handling
+- [ ] Try file too large (>10MB)
+- [ ] Try non-image file (.pdf)
+- [ ] Verify error messages
+- [ ] Try retry button
 
-## Verifying Uploads
+### Multiple Images
+- [ ] Upload multiple images
+- [ ] All upload correctly
+- [ ] No interference
 
-### In Cloudinary Dashboard
+---
 
-1. Go to **Media Library**
-2. Navigate to your folder (`authorly-test`)
-3. Verify uploaded images appear
-4. Check image metadata
+## Expected HTML Output
 
-### In Browser DevTools
+### Cloudinary:
+```html
+<img 
+  src="https://res.cloudinary.com/.../q_auto,f_auto/.../image.jpg"
+  srcset="
+    https://res.cloudinary.com/.../w_480,q_auto,f_auto/.../image.jpg 480w,
+    https://res.cloudinary.com/.../w_768,q_auto,f_auto/.../image.jpg 768w,
+    https://res.cloudinary.com/.../w_1024,q_auto,f_auto/.../image.jpg 1024w,
+    https://res.cloudinary.com/.../w_1536,q_auto,f_auto/.../image.jpg 1536w,
+    https://res.cloudinary.com/.../w_2048,q_auto,f_auto/.../image.jpg 2048w
+  "
+  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
+  alt="My image description"
+  width="1200"
+  height="800"
+/>
+```
 
-1. Open DevTools (F12)
-2. Go to **Console** tab
-3. Look for upload logs:
-   - Upload start
-   - Progress updates
-   - Success with URL
-4. Go to **Network** tab
-5. Filter by "upload"
-6. Verify POST requests to Cloudinary API
+### S3:
+```html
+<img 
+  src="https://my-bucket.s3.us-east-1.amazonaws.com/images/photo.jpg"
+  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
+  alt="My image description"
+  width="1200"
+  height="800"
+/>
+```
 
-## Expected Behavior
+### Base64:
+```html
+<img 
+  src="data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+  alt="My image description"
+  width="1200"
+  height="800"
+/>
+```
 
-### When Configured ✅
-- Green "Cloud Upload Enabled" banner
-- Images upload to Cloudinary
-- Progress bar shows during upload
-- Success message with URL appears
-- Images load from Cloudinary CDN
-
-### When Not Configured ⚠️
-- Yellow "Cloud Upload Not Configured" banner
-- Images converted to base64
-- No upload progress (instant)
-- No network requests
-- Images embedded in HTML
+---
 
 ## Troubleshooting
 
-### Upload Fails with "Upload preset not found"
-- Check your preset name in .env matches exactly
-- Ensure preset is **unsigned** in Cloudinary settings
+### Cloudinary Upload Fails
 
-### Upload Fails with "Invalid cloud name"
-- Verify `VITE_CLOUDINARY_CLOUD_NAME` is correct
-- Check for typos or extra spaces
+**Error**: "Upload preset not found"
+- Check preset name matches exactly
+- Ensure preset is **unsigned**
 
-### Progress Bar Doesn't Update
-- This is normal for small files (< 100KB)
-- Try larger images to see progress
+**Error**: "Invalid cloud name"
+- Verify cloud name is correct
+- Check for typos
 
-### Images Don't Appear
-- Check browser console for errors
-- Verify Cloudinary CORS settings allow your domain
-- Check upload preset allows public access
+### S3 Upload Fails
 
-## Advanced Testing
+**Error**: "Failed to get presigned URL"
+- Backend not running
+- Wrong API endpoint
+- Check backend logs
 
-### Test Different Image Formats
-- JPEG
-- PNG
-- WebP
-- GIF
-- SVG (should fail - not allowed by default)
+**Error**: CORS error
+- Add CORS policy to S3 bucket
+- Allow origin domain
 
-### Test Responsive Images
-- Upload image and inspect HTML
-- Look for Cloudinary transformation URLs
-- Verify different sizes are generated
+### No Progress Bar
 
-### Test Image Optimization
-- Compare original vs uploaded file size
-- Check Cloudinary dashboard for auto-optimizations
-- Verify format conversion (e.g., PNG → WebP)
+Normal for small files (<100KB). Try larger image.
 
-## Success Criteria
+---
 
-✅ All tests pass
-✅ Images upload to Cloudinary
-✅ Progress indicator works smoothly
-✅ Error handling is clear
-✅ Images display correctly
-✅ No console errors
-✅ Fallback to base64 works when not configured
+## Verification
+
+### In Browser DevTools
+
+**Console**:
+- Upload start log
+- Progress updates
+- Success with URL
+
+**Network**:
+- POST to Cloudinary/S3
+- Check response status
+- Verify file uploaded
+
+### In Cloud Dashboard
+
+**Cloudinary**:
+- Media Library → Check folder
+- Verify image appears
+
+**S3**:
+- S3 Console → Check bucket
+- Verify object exists
+
+---
 
 ## Next Steps
 
-Once testing is complete and successful:
-1. Document any issues found
-2. Ready for production use
-3. Publish to npm as `authorly-editor@0.1.9`
+After successful testing:
+
+1. **For Production**:
+   - Use Cloudinary for auto-optimization
+   - Or S3 for cost control
+   - Never use base64
+
+2. **Optimize Images**:
+   - Enable responsive images
+   - Add alt text
+   - Use WebP format (Cloudinary auto)
+
+3. **Monitor**:
+   - Check upload errors
+   - Track storage usage
+   - Monitor bandwidth
+
+---
+
+## Quick Comparison
+
+| Feature | Cloudinary | S3 | Base64 |
+|---------|-----------|-----|--------|
+| Setup | Easy | Medium | None |
+| Backend | No | Yes | No |
+| Auto-optimize | Yes | No | No |
+| Responsive | Yes | Partial | No |
+| Cost | Higher | Lower | N/A |
+| Production | ✅ Yes | ✅ Yes | ❌ No |
+
+**Recommendation**: Use Cloudinary for testing and quick projects. Use S3 for large-scale production.
+
+---
 
 ## Support
 
-If you encounter issues:
-- Check `.env` values are correct
-- Verify Cloudinary preset is **unsigned**
-- Look at browser console for detailed errors
-- Check Network tab for failed requests
+Issues? Check:
+- Environment variables correct
+- API endpoints accessible
+- CORS configured
+- Console for errors
+
+See [S3-UPLOAD-GUIDE.md](./S3-UPLOAD-GUIDE.md) for S3 setup details.
+

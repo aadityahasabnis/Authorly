@@ -9,9 +9,26 @@
 import './styles/editor.css';
 
 // Main components
-export { ContentBlocksEditor, type EditorRef, type GetHTMLOptions } from './components/Editor';
-export { ContentBlocksRenderer, type ContentBlocksRendererProps } from './components/Renderer';
-export { TableOfContents, parseHeadings, type TocItem, type TableOfContentsProps } from './components/TableOfContents';
+export { 
+  AuthorlyEditor,
+  ContentBlocksEditor, // @deprecated - Use AuthorlyEditor instead
+  type EditorRef, 
+  type GetHTMLOptions 
+} from './components/Editor';
+export { 
+  AuthorlyRenderer,
+  ContentBlocksRenderer, // @deprecated - Use AuthorlyRenderer instead
+  type AuthorlyRendererProps,
+  type ContentBlocksRendererProps, // @deprecated - Use AuthorlyRendererProps instead
+} from './components/Renderer';
+export { 
+  AuthorlyTOC,
+  TableOfContents, // @deprecated - Use AuthorlyTOC instead
+  parseHeadings, 
+  type TocItem, 
+  type AuthorlyTOCProps,
+  type TableOfContentsProps, // @deprecated - Use AuthorlyTOCProps instead
+} from './components/TableOfContents';
 export { Toolbar } from './components/Toolbar';
 export { BlockMenu } from './components/BlockMenu';
 export { BlockWrapper } from './components/BlockWrapper';

@@ -1,5 +1,5 @@
 /**
- * ContentBlocksEditor - Main React Component
+ * AuthorlyEditor - Main React Component
  * Complete rewrite with proper block handling
  */
 
@@ -13,7 +13,7 @@ import React, {
   useMemo,
 } from 'react';
 import type {
-  ContentBlocksEditorProps,
+  AuthorlyEditorProps,
   EditorInstance,
   BlockType,
   BlockData,
@@ -23,37 +23,35 @@ import type {
 import { blockRegistry } from '../core/block-registry';
 import { allBlocks } from '../blocks';
 import { sanitizePaste } from '../paste/sanitize';
-import { initDragDrop, createDragHandle } from '../drag/drag-handle';
+import { initDragDrop } from '../drag/drag-handle';
 import {
   isCursorAtStart,
   isCursorAtEnd,
   moveCursorToEnd,
   moveCursorToStart,
-  getSelectionState,
 } from '../core/selection';
 import {
   generateId,
   debounce,
   countWords,
   countCharacters,
-  getBlockFromChild,
 } from '../utils/helpers';
 import { Toolbar } from './Toolbar';
 import { SelectionToolbar } from './SelectionToolbar';
 import { BlockMenu } from './BlockMenu';
 import { StatusBar, calculateReadingTime } from './StatusBar';
 import { ExcalidrawModal } from './ExcalidrawModal';
-import { GripVertical, Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 
 // Type declarations for Excalidraw - using any for now to avoid import path issues
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ExcalidrawElement = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AppState = any;
 import { addTableRow, addTableColumn, deleteTableRow, deleteTableColumn, getFocusedCell, getCellPosition } from '../blocks/table';
 import { setImageSrc, createImageFromFile, setImageAlign, createCropModal } from '../blocks/image';
 import { setVideoSrc } from '../blocks/video';
 import { setCalloutType } from '../blocks/callout';
 import { ImageUploadService } from '../services/uploadService';
-import type { UploadProgress } from '../types/upload';
 import { optimizeCloudinaryUrl, generateCloudinarySrcset } from '../services/cloudinaryUpload';
 
 export interface GetHTMLOptions {
@@ -77,13 +75,13 @@ export interface EditorRef {
   getEditor: () => EditorInstance | null;
 }
 
-const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
+const AuthorlyEditorInner: React.ForwardRefRenderFunction<
   EditorRef,
-  ContentBlocksEditorProps
+  AuthorlyEditorProps
 > = (props, ref) => {
   const {
     initialContent = '',
-    blocks: enabledBlocks,
+    blocks: _enabledBlocks, // Reserved for future filtering
     placeholder = 'Type "/" for commands...',
     readOnly = false,
     classPrefix = 'cb',
@@ -125,12 +123,13 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const undoStackRef = useRef<HistoryEntry[]>([]); // Enhanced undo stack
   const redoStackRef = useRef<HistoryEntry[]>([]); // Enhanced redo stack
   const selectedBlockIdsRef = useRef<Set<string>>(new Set()); // Ref for current selection (avoids closure issues)
+  const lastSaveTimestampRef = useRef<number>(0); // PROFESSIONAL FIX: Track last save time to prevent duplicate rapid saves
   const [isMounted, setIsMounted] = useState(false); // Track mount state for toolbar
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [selectedBlockIds, setSelectedBlockIds] = useState<Set<string>>(new Set()); // Multi-block selection
   const [showBlockMenu, setShowBlockMenu] = useState(false);
   const [blockMenuPosition, setBlockMenuPosition] = useState({ x: 0, y: 0 });
-  const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
+  const [_hoveredBlockId, _setHoveredBlockId] = useState<string | null>(null); // Reserved for future hover effects
   const [selectionVersion, setSelectionVersion] = useState(0); // Force toolbar update on selection change
   const [editorState, setEditorState] = useState<EditorState>({
     blocks: [],
@@ -147,7 +146,9 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const [excalidrawModal, setExcalidrawModal] = useState<{
     isOpen: boolean;
     blockId: string | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     initialElements: any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     initialAppState: any;
   }>({
     isOpen: false,
@@ -368,6 +369,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     wrapper.appendChild(actions);
 
     // Add upload service indicator for image blocks
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (type === 'image' && !(data as any)?.src) {
       setTimeout(() => updateImagePlaceholders(wrapper), 0);
     }
@@ -501,6 +503,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
   // Extract block data from HTML element
   const extractBlockData = (element: HTMLElement, type: BlockType): Partial<BlockData> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = { type };
 
     // CRITICAL FIX (Bug #17): Never preserve data-block-id from pasted content
@@ -508,18 +511,19 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     // The 'id' field will be auto-generated by createBlockWithControls
 
     switch (type) {
-      case 'heading':
+      case 'heading': {
         const level = parseInt(element.tagName.charAt(1)) || 2;
         data.level = level;
         data.content = element.innerHTML;
         break;
+      }
       case 'paragraph':
         data.content = element.innerHTML;
         break;
       case 'bulletList':
       case 'numberedList':
-      case 'checkList':
-        const items: any[] = [];
+      case 'checkList': {
+        const items: Array<{id: string; content: string; checked?: boolean}> = [];
         element.querySelectorAll(':scope > li').forEach(li => {
           items.push({
             id: generateId(), // Fresh ID for each list item
@@ -529,20 +533,23 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         });
         data.items = items;
         break;
+      }
       case 'quote':
         data.content = element.innerHTML;
         break;
-      case 'code':
+      case 'code': {
         const code = element.querySelector('code') || element;
         data.content = code.textContent || '';
         data.language = element.getAttribute('data-language') || 'plaintext';
         break;
-      case 'image':
+      }
+      case 'image': {
         const img = element.querySelector('img');
         data.src = img?.src || '';
         data.alt = img?.alt || '';
         data.caption = element.querySelector('figcaption')?.textContent || '';
         break;
+      }
       case 'divider':
         data.style = 'solid';
         break;
@@ -555,11 +562,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         data.content = element.querySelector('.cb-accordion-content')?.innerHTML || '';
         data.open = (element as HTMLDetailsElement).open;
         break;
-      case 'table':
+      case 'table': {
         // Parse table structure
-        const rows: any[] = [];
+        const rows: Array<{cells: Array<{content: string}>}> = [];
         element.querySelectorAll('tr').forEach(tr => {
-          const cells: any[] = [];
+          const cells: Array<{content: string}> = [];
           tr.querySelectorAll('th, td').forEach(cell => {
             cells.push({ content: cell.innerHTML });
           });
@@ -567,6 +574,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         });
         data.rows = rows;
         break;
+      }
       case 'linkPreview':
         data.url = element.getAttribute('data-url') || '';
         break;
@@ -733,7 +741,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
       // Special handling for different block types
       switch (type) {
-        case 'code':
+        case 'code': {
           const codeEl = clone.querySelector('code');
           const preEl = clone.querySelector('pre');
           if (codeEl && preEl) {
@@ -743,6 +751,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             html += clone.outerHTML + '\n';
           }
           break;
+        }
         case 'divider':
           html += '<hr>\n';
           break;
@@ -882,7 +891,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
         // Handle specific block types for clean output
         switch (blockType) {
-          case 'code':
+          case 'code': {
             const codeEl = clone.querySelector('code');
             const preEl = clone.querySelector('pre');
             if (codeEl && preEl) {
@@ -892,25 +901,27 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
               cleanHTML += clone.outerHTML + '\n';
             }
             break;
+          }
           case 'divider':
             cleanHTML += '<hr>\n';
             break;
-          case 'image':
+          case 'image': {
             const img = clone.querySelector('img');
             const caption = clone.querySelector('figcaption');
             if (img) {
               cleanHTML += '<figure>';
               cleanHTML += `<img src="${img.src}" alt="${img.alt || ''}" />`;
               if (caption && caption.textContent?.trim()) {
-                cleanHTML += `<figcaption>${caption.textContent}</figcaption>`;
-              }
-              cleanHTML += '</figure>\n';
+              cleanHTML += `<figcaption>${caption.textContent}</figcaption>`;
             }
-            break;
-          default:
-            cleanHTML += clone.outerHTML + '\n';
+            cleanHTML += '</figure>\n';
+          }
+          break;
         }
-      });
+        default:
+          cleanHTML += clone.outerHTML + '\n';
+      }
+    });
 
       return cleanHTML.trim();
     }
@@ -974,7 +985,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
       // Handle specific block types
       switch (blockType) {
-        case 'code':
+        case 'code': {
           const codeEl = clone.querySelector('code');
           const preEl = clone.querySelector('pre');
           if (codeEl && preEl) {
@@ -984,10 +995,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             cleanHTML += clone.outerHTML + '\n';
           }
           break;
+        }
         case 'divider':
           cleanHTML += '<hr>\n';
           break;
-        case 'image':
+        case 'image': {
           const img = clone.querySelector('img');
           const caption = clone.querySelector('figcaption');
           if (img) {
@@ -999,6 +1011,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             cleanHTML += '</figure>\n';
           }
           break;
+        }
         default:
           cleanHTML += clone.outerHTML + '\n';
       }
@@ -1040,7 +1053,8 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           preRange.selectNodeContents(editableElement);
           preRange.setEnd(range.startContainer, range.startOffset);
           offset = preRange.toString().length;
-        } catch (e) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_e) {
           offset = 0;
         }
 
@@ -1084,6 +1098,20 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       const selection = window.getSelection();
       if (!selection) return;
 
+      // PROFESSIONAL FIX: Handle empty blocks (no text nodes)
+      // Check if element is empty or has only whitespace
+      const textContent = editableElement.textContent || '';
+      
+      if (textContent.length === 0) {
+        // Empty block - just place cursor at start
+        range.selectNodeContents(editableElement);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        editableElement.focus();
+        return;
+      }
+
       // Walk through text nodes to find the offset
       const walker = document.createTreeWalker(
         editableElement,
@@ -1112,9 +1140,19 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
 
       if (!found) {
-        // Offset not found - place cursor at end
-        range.selectNodeContents(editableElement);
-        range.collapse(false);
+        // PROFESSIONAL FIX: Offset not found or beyond content length
+        // Place cursor at the last valid position
+        if (currentOffset > 0 && walker.currentNode) {
+          // We have some text content, place at end of last text node
+          const lastTextNode = walker.currentNode;
+          const lastNodeLength = lastTextNode.textContent?.length || 0;
+          range.setStart(lastTextNode, lastNodeLength);
+          range.setEnd(lastTextNode, lastNodeLength);
+        } else {
+          // Fallback: place at end of element
+          range.selectNodeContents(editableElement);
+          range.collapse(false);
+        }
       }
 
       selection.removeAllRanges();
@@ -1122,7 +1160,8 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
       // Focus the element
       editableElement.focus();
-    } catch (e) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_e) {
       // Fallback: just focus the element
       editableElement.focus();
     }
@@ -1130,6 +1169,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
   // Save to history - IMMEDIATE (for structural changes like add/delete block)
   const saveToHistoryImmediate = useCallback(() => {
+    // PROFESSIONAL FIX: Throttle rapid saves (minimum 50ms between saves)
+    // This prevents duplicate history entries when multiple operations happen in quick succession
+    const now = Date.now();
+    const timeSinceLastSave = now - lastSaveTimestampRef.current;
+    
     const currentHTML = getEditorStateHTML(); // Use editor state instead of clean HTML
     const cursorPosition = captureCursorPosition();
 
@@ -1138,6 +1182,20 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     if (lastEntry && lastEntry.html === currentHTML) {
       return;
     }
+
+    // PROFESSIONAL FIX: If less than 50ms since last save, defer this save slightly
+    // This batches rapid consecutive operations into a single history entry
+    if (timeSinceLastSave < 50 && lastEntry) {
+      // Skip this immediate save if it's too rapid, unless it's significantly different
+      const htmlDiff = Math.abs(currentHTML.length - lastEntry.html.length);
+      if (htmlDiff < 10) {
+        // Minor change within 50ms window - skip to avoid duplicate
+        return;
+      }
+    }
+
+    // Update last save timestamp
+    lastSaveTimestampRef.current = now;
 
     const historyEntry: HistoryEntry = {
       html: currentHTML,
@@ -1174,7 +1232,18 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     debouncedSaveToHistory();
   }, [debouncedSaveToHistory]);
 
+  // CRITICAL FIX: Cleanup debounced functions on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Cancel any pending debounced calls
+      debouncedSaveToHistory.cancel();
+      emitChange.cancel();
+    };
+  }, [debouncedSaveToHistory, emitChange]);
+
+
   const handleUndo = useCallback(() => {
+    // PROFESSIONAL FIX: Check if undo stack has at least one entry
     if (undoStackRef.current.length === 0) {
       console.log('🔙 Undo: No history available');
       return;
@@ -1182,50 +1251,60 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
     console.log('🔙 Undo: Stack size =', undoStackRef.current.length);
 
-    // Cancel any pending debounced saves
+    // Cancel any pending debounced saves to avoid conflicts
     debouncedSaveToHistory.cancel();
 
-    // Save current state to redo stack
-    const currentHTML = getEditorStateHTML(); // Use editor state
-    const currentCursor = captureCursorPosition();
-    const currentEntry: HistoryEntry = {
-      html: currentHTML,
-      cursorPosition: currentCursor,
-      selectedBlockIds: Array.from(selectedBlockIds),
-    };
-
-    // Get previous state from undo stack
+    // Get previous state from undo stack (last entry)
     const previousEntry = undoStackRef.current[undoStackRef.current.length - 1];
+    
+    // Get current state
+    const currentHTML = getEditorStateHTML();
+    
+    // PROFESSIONAL FIX: Don't save to redo if current state is identical to previous state
+    // This prevents unnecessary duplicate entries in redo stack
+    if (currentHTML !== previousEntry.html) {
+      const currentCursor = captureCursorPosition();
+      const currentEntry: HistoryEntry = {
+        html: currentHTML,
+        cursorPosition: currentCursor,
+        selectedBlockIds: Array.from(selectedBlockIds),
+      };
+      
+      // Save current state to redo stack (limit to 50 entries)
+      redoStackRef.current = [...redoStackRef.current, currentEntry].slice(-50);
+    }
 
-    // Update stacks
+    // Remove the entry we're about to restore from undo stack
     undoStackRef.current = undoStackRef.current.slice(0, -1);
-    // CRITICAL FIX (Bug #16): Limit redo stack size to prevent memory leak (max 50 entries)
-    redoStackRef.current = [...redoStackRef.current, currentEntry].slice(-50);
 
+    // Update editor state
     setEditorState(prev => ({
       ...prev,
       undoStack: undoStackRef.current,
       redoStack: redoStackRef.current,
     }));
 
-    // Restore HTML
-    setEditorStateHTML(previousEntry.html); // Use editor state
+    // Restore the previous state's HTML
+    setEditorStateHTML(previousEntry.html);
 
-    // MEDIUM-PRIORITY FIX (Bug #5): Use RAF instead of setTimeout for cursor restoration
-    // This ensures DOM is actually updated before restoring cursor, avoiding timing issues
+    // PROFESSIONAL FIX: Use double RAF for more reliable cursor restoration
+    // First RAF ensures HTML is rendered, second RAF ensures layout is complete
     requestAnimationFrame(() => {
-      restoreCursorPosition(previousEntry.cursorPosition);
+      requestAnimationFrame(() => {
+        restoreCursorPosition(previousEntry.cursorPosition);
 
-      // Restore block selection
-      if (previousEntry.selectedBlockIds && previousEntry.selectedBlockIds.length > 0) {
-        setSelectedBlockIds(new Set(previousEntry.selectedBlockIds));
-      } else {
-        setSelectedBlockIds(new Set());
-      }
+        // Restore block selection
+        if (previousEntry.selectedBlockIds && previousEntry.selectedBlockIds.length > 0) {
+          setSelectedBlockIds(new Set(previousEntry.selectedBlockIds));
+        } else {
+          setSelectedBlockIds(new Set());
+        }
+      });
     });
   }, [getEditorStateHTML, setEditorStateHTML, captureCursorPosition, restoreCursorPosition, debouncedSaveToHistory, selectedBlockIds]);
 
   const handleRedo = useCallback(() => {
+    // PROFESSIONAL FIX: Check if redo stack has at least one entry
     if (redoStackRef.current.length === 0) {
       console.log('🔜 Redo: No redo history available');
       return;
@@ -1233,46 +1312,55 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
     console.log('🔜 Redo: Stack size =', redoStackRef.current.length);
 
-    // Cancel any pending debounced saves
+    // Cancel any pending debounced saves to avoid conflicts
     debouncedSaveToHistory.cancel();
 
-    // Save current state to undo stack
-    const currentHTML = getEditorStateHTML(); // Use editor state
-    const currentCursor = captureCursorPosition();
-    const currentEntry: HistoryEntry = {
-      html: currentHTML,
-      cursorPosition: currentCursor,
-      selectedBlockIds: Array.from(selectedBlockIds),
-    };
-
-    // Get next state from redo stack
+    // Get next state from redo stack (last entry)
     const nextEntry = redoStackRef.current[redoStackRef.current.length - 1];
+    
+    // Get current state
+    const currentHTML = getEditorStateHTML();
+    
+    // PROFESSIONAL FIX: Don't save to undo if current state is identical to next state
+    // This prevents unnecessary duplicate entries in undo stack
+    if (currentHTML !== nextEntry.html) {
+      const currentCursor = captureCursorPosition();
+      const currentEntry: HistoryEntry = {
+        html: currentHTML,
+        cursorPosition: currentCursor,
+        selectedBlockIds: Array.from(selectedBlockIds),
+      };
+      
+      // Save current state to undo stack (limit to 50 entries)
+      undoStackRef.current = [...undoStackRef.current, currentEntry].slice(-50);
+    }
 
-    // Update stacks
+    // Remove the entry we're about to restore from redo stack
     redoStackRef.current = redoStackRef.current.slice(0, -1);
-    // CRITICAL FIX (Bug #16): Limit undo stack size when redoing (max 50 entries)
-    undoStackRef.current = [...undoStackRef.current, currentEntry].slice(-50);
 
+    // Update editor state
     setEditorState(prev => ({
       ...prev,
       redoStack: redoStackRef.current,
       undoStack: undoStackRef.current,
     }));
 
-    // Restore HTML
-    setEditorStateHTML(nextEntry.html); // Use editor state
+    // Restore the next state's HTML
+    setEditorStateHTML(nextEntry.html);
 
-    // MEDIUM-PRIORITY FIX (Bug #5): Use RAF instead of setTimeout for cursor restoration
-    // This ensures DOM is actually updated before restoring cursor, avoiding timing issues
+    // PROFESSIONAL FIX: Use double RAF for more reliable cursor restoration
+    // First RAF ensures HTML is rendered, second RAF ensures layout is complete
     requestAnimationFrame(() => {
-      restoreCursorPosition(nextEntry.cursorPosition);
+      requestAnimationFrame(() => {
+        restoreCursorPosition(nextEntry.cursorPosition);
 
-      // Restore block selection
-      if (nextEntry.selectedBlockIds && nextEntry.selectedBlockIds.length > 0) {
-        setSelectedBlockIds(new Set(nextEntry.selectedBlockIds));
-      } else {
-        setSelectedBlockIds(new Set());
-      }
+        // Restore block selection
+        if (nextEntry.selectedBlockIds && nextEntry.selectedBlockIds.length > 0) {
+          setSelectedBlockIds(new Set(nextEntry.selectedBlockIds));
+        } else {
+          setSelectedBlockIds(new Set());
+        }
+      });
     });
   }, [getEditorStateHTML, setEditorStateHTML, captureCursorPosition, restoreCursorPosition, debouncedSaveToHistory, selectedBlockIds]);
 
@@ -1373,6 +1461,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   }, [saveToHistoryImmediate, updateState, emitChange]);
 
   // Transform block to different type
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const transformBlockType = useCallback((blockId: string, newType: BlockType, data?: Record<string, any>): void => {
     if (!contentRef.current) return;
 
@@ -1389,6 +1478,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const currentContent = contentEl?.innerHTML || '';
 
     // Create new block with same content where applicable
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const blockData = { content: currentContent, ...data } as any;
     const newBlock = createBlockWithControls(newType, blockData);
 
@@ -1473,7 +1563,6 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       executeCommand: () => { },
     };
     // Only recreate when truly necessary - not on editorState or activeBlockId changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted, selectionVersion, props, getHTML, setHTML, getText, insertBlockAfter, deleteBlockById,
     moveBlock, transformBlockType, handleUndo, handleRedo, focus, blur, emitChange]);
 
@@ -1608,10 +1697,35 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
     const figure = input.closest('figure.cb-image') as HTMLElement;
     if (!figure) return;
 
+    // Store block ID to detect if block is removed during upload
+    const blockId = figure.getAttribute('data-block-id');
+    if (!blockId) return;
+
+    // Helper to check if block still exists
+    const getBlock = (): HTMLElement | null => {
+      return contentRef.current?.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+    };
+
     saveToHistoryImmediate(); // Use immediate save for image upload
 
     // Check if upload service is available
     if (!uploadService) {
+      // CRITICAL FIX: Validate file size BEFORE processing to prevent browser hangs
+      // A 50MB image becomes ~66MB base64 string, which can crash the browser
+      const MAX_BASE64_SIZE_MB = 10; // 10MB limit for base64 images
+      const maxSizeBytes = MAX_BASE64_SIZE_MB * 1024 * 1024;
+      
+      if (file.size > maxSizeBytes) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        const error = new Error(
+          `Image too large (${sizeMB}MB). Maximum size for base64 images is ${MAX_BASE64_SIZE_MB}MB.\n` +
+          'Please configure Cloudinary or S3 for larger images, or compress your image.'
+        );
+        showImageUploadError(figure, error);
+        console.error('Image upload failed:', error.message);
+        return;
+      }
+
       // Fallback to base64 with warning
       console.warn(
         '⚠️ Authorly: No imageUploadConfig provided. Using base64 fallback.\n' +
@@ -1621,12 +1735,25 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
       try {
         const dataUrl = await createImageFromFile(file);
-        setImageSrc(figure, dataUrl, file.name);
-        addImageControls(figure);
+        
+        // Check if block still exists before updating
+        const currentBlock = getBlock();
+        if (!currentBlock) {
+          console.log('Block removed during upload, skipping update');
+          return;
+        }
+        
+        setImageSrc(currentBlock as HTMLElement, dataUrl, file.name);
+        addImageControls(currentBlock as HTMLElement);
         emitChange();
       } catch (err) {
         console.error('Failed to load image:', err);
-        showImageUploadError(figure, err);
+        
+        // Check if block still exists before showing error
+        const currentBlock = getBlock();
+        if (currentBlock) {
+          showImageUploadError(currentBlock as HTMLElement, err);
+        }
       }
       return;
     }
@@ -1640,8 +1767,12 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
 
       // Upload to cloud with progress tracking
       const result = await uploadService.upload(file, (progress) => {
+        // Check if block still exists before updating progress
+        const currentBlock = getBlock();
+        if (!currentBlock) return;
+        
         // Update progress bar
-        const progressBar = figure.querySelector('.cb-upload-progress-bar') as HTMLElement;
+        const progressBar = currentBlock.querySelector('.cb-upload-progress-bar') as HTMLElement;
         if (progressBar) {
           progressBar.style.width = `${progress.percent}%`;
         }
@@ -1649,14 +1780,21 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
         onUploadProgress?.(progress);
       });
 
+      // Check if block still exists before setting image
+      const currentBlock = getBlock();
+      if (!currentBlock) {
+        console.log('Block removed during upload, skipping image insertion');
+        return;
+      }
+
       // Callback: upload success
       onUploadSuccess?.(result);
 
       // Insert image with cloud URL
-      setImageSrc(figure, result.url, file.name);
+      setImageSrc(currentBlock as HTMLElement, result.url, file.name);
 
       // Store dimensions as data attributes for responsive images
-      const img = figure.querySelector('img');
+      const img = currentBlock.querySelector('img');
       if (img) {
         img.setAttribute('data-width', String(result.width));
         img.setAttribute('data-height', String(result.height));
@@ -1666,15 +1804,18 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       }
 
       // Add alignment and crop controls
-      addImageControls(figure);
+      addImageControls(currentBlock as HTMLElement);
 
       emitChange();
     } catch (error) {
       // Callback: upload error
       onUploadError?.(error as Error);
 
-      // Show error state with retry option
-      showImageUploadError(figure, error);
+      // Check if block still exists before showing error
+      const currentBlock = getBlock();
+      if (currentBlock) {
+        showImageUploadError(currentBlock as HTMLElement, error);
+      }
     }
   }, [uploadService, saveToHistoryImmediate, emitChange, onUploadStart, onUploadSuccess, onUploadError, onUploadProgress, showImageUploadingState, showImageUploadError, addImageControls]);
 
@@ -1863,7 +2004,9 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             if (!excalidrawElement) return;
 
             // Get stored Excalidraw data
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let initialElements: any[] = [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let initialAppState: any = {};
 
             try {
@@ -2060,21 +2203,31 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
       saveToHistory();
     };
 
-    // PERFORMANCE FIX (Bug #7): Throttle resize with RAF to prevent excessive reflows
+    // CRITICAL FIX (Bug #28): Improved RAF throttling - store latest event and process in next frame
+    // Previous implementation skipped events when RAF was pending, causing choppy resize
+    let latestMouseEvent: MouseEvent | null = null;
+
     const handleResizeMove = (e: MouseEvent) => {
       if (!isResizing || !currentImg || !handleType) return;
 
       e.preventDefault();
 
-      // Cancel any pending RAF
+      // Store the latest mouse event - will be processed in the next available RAF
+      latestMouseEvent = e;
+
+      // If RAF is already scheduled, the latest event will be picked up
       if (rafId !== null) return;
 
       rafId = requestAnimationFrame(() => {
         rafId = null;
 
-        if (!currentImg || !isResizing) return;
+        if (!currentImg || !isResizing || !latestMouseEvent) return;
 
-        const diff = e.clientX - startX;
+        // Use the most recent mouse event
+        const mouseEvent = latestMouseEvent;
+        latestMouseEvent = null;
+
+        const diff = mouseEvent.clientX - startX;
         let newWidth: number;
 
         // Handle direction affects how we calculate width
@@ -2462,7 +2615,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           document.execCommand('underline');
           emitChange();
           return;
-        case 'a':
+        case 'a': {
           // Two-level selection: first press selects current block, second selects all
           e.preventDefault();
 
@@ -2501,6 +2654,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
             selection.addRange(newRange);
           }
           return;
+        }
         case 's':
           e.preventDefault();
           if (onSave) onSave(getHTML());
@@ -2840,7 +2994,6 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
           saveToHistoryImmediate(); // Use immediate save for structural change
 
           const listElement = li.closest('ul, ol') as HTMLElement;
-          const wrapper = block;
 
           // Check if this is a nested list
           const isNested = li.parentElement?.classList.contains('cb-nested-list');
@@ -3642,6 +3795,7 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   }, [onBlur]);
 
   // Handle block selection from menu
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleBlockMenuSelect = useCallback((type: BlockType, data?: Record<string, any>, inline?: boolean) => {
     setShowBlockMenu(false);
 
@@ -3746,11 +3900,11 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   const handleMouseEnter = useCallback((e: React.MouseEvent) => {
     const block = (e.target as HTMLElement).closest('.cb-block') as HTMLElement;
     const blockId = block?.getAttribute('data-block-id');
-    setHoveredBlockId(blockId);
+    _setHoveredBlockId(blockId);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    setHoveredBlockId(null);
+    _setHoveredBlockId(null);
   }, []);
 
   // MEDIUM-PRIORITY FIX (Bug #3): Cleanup debounced function on unmount to prevent memory leaks
@@ -3844,4 +3998,8 @@ const ContentBlocksEditorInner: React.ForwardRefRenderFunction<
   );
 };
 
-export const ContentBlocksEditor = forwardRef(ContentBlocksEditorInner);
+export const AuthorlyEditor = forwardRef(AuthorlyEditorInner);
+
+/** @deprecated Use AuthorlyEditor instead */
+export const ContentBlocksEditor = AuthorlyEditor;
+

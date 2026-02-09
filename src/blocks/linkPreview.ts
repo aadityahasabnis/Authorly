@@ -4,7 +4,6 @@
 
 import type { BlockDefinition } from '../core/types';
 import { generateId } from '../utils/helpers';
-import { ExternalLink, Loader } from 'lucide-react';
 import type { LinkPreviewData } from '../utils/opengraph';
 import { fetchLinkPreview, extractDomain, getFaviconUrl } from '../utils/opengraph';
 

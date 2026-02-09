@@ -14,7 +14,8 @@ import { UploadError } from '../types/upload';
 export async function uploadToS3(
   file: File,
   config: S3Config,
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  _signal?: AbortSignal // Reserved for abort support
 ): Promise<UploadResult> {
   // Validate configuration
   if (!config.bucket || !config.region) {
@@ -119,14 +120,23 @@ async function getPresignedUrl(
 
 /**
  * Upload file to S3 using presigned URL
+ * CRITICAL FIX: Added AbortSignal support for upload cancellation
  */
 function uploadToPresignedUrl(
   presignedUrl: string,
   file: File,
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+
+    // CRITICAL FIX: Support upload cancellation via AbortSignal
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        xhr.abort();
+      });
+    }
 
     // Track upload progress
     if (onProgress) {

@@ -31,6 +31,7 @@ interface BlockMenuItem {
   description: string;
   icon: LucideIcon;
   keywords: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: Record<string, any>; // Additional data to pass when creating block
   inline?: boolean; // If true, insert inline in current block instead of creating new block
 }
@@ -162,7 +163,7 @@ const BLOCK_MENU_ITEMS: BlockMenuItem[] = [
 ];
 
 export const BlockMenu: React.FC<BlockMenuProps> = ({
-  editor,
+  editor: _editor, // Reserved for future use
   position,
   onSelect,
   onClose,

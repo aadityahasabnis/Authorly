@@ -320,6 +320,7 @@ export interface EditorInstance {
   /** Move a block */
   moveBlock: (block: HTMLElement, direction: 'up' | 'down') => void;
   /** Transform block type */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   transformBlock: (block: HTMLElement, newType: BlockType, data?: Record<string, any>) => HTMLElement;
   /** Apply inline format */
   toggleFormat: (format: InlineFormat) => void;
@@ -389,7 +390,7 @@ export interface DragState {
 // React Component Props
 // ============================================
 
-export interface ContentBlocksEditorProps {
+export interface AuthorlyEditorProps {
   /** Initial HTML content */
   initialContent?: string;
   /** Enabled blocks */
@@ -447,6 +448,10 @@ export interface ContentBlocksEditorProps {
   onUploadProgress?: (progress: UploadProgress) => void;
 }
 
+/** @deprecated Use AuthorlyEditorProps instead */
+export type ContentBlocksEditorProps = AuthorlyEditorProps;
+
+
 export interface ToolbarProps {
   editor: EditorInstance;
   className?: string;
@@ -457,6 +462,7 @@ export interface ToolbarProps {
 export interface BlockMenuProps {
   editor: EditorInstance;
   position: Point;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSelect: (type: BlockType, data?: Record<string, any>, inline?: boolean) => void;
   onClose: () => void;
 }

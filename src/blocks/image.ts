@@ -278,7 +278,13 @@ export function cropImage(
       
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
       
-      resolve(canvas.toDataURL('image/png'));
+      const dataUrl = canvas.toDataURL('image/png');
+      
+      // Free canvas memory to prevent accumulation
+      canvas.width = 0;
+      canvas.height = 0;
+      
+      resolve(dataUrl);
     };
     
     img.onerror = () => reject(new Error('Failed to load image'));

@@ -9,16 +9,27 @@
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.esm.js",
       "require": "./dist/index.cjs.js"
     },
-    "./styles": "./dist/style.css"
+    "./styles.css": "./dist/style.css",
+    "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist/index.cjs.js",
+    "dist/index.esm.js",
+    "dist/index.d.ts",
+    "dist/style.css",
+    "dist/src/**/*.d.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "dev": "vite",
@@ -26,6 +37,7 @@
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx",
     "test": "vitest",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "publish:github": "npm version patch && npm publish",
     "publish:npm": "npm run build && npm pkg set name=authorly-editor && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"

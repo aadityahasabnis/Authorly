@@ -26,7 +26,8 @@ interface CloudinaryResponse {
 export async function uploadToCloudinary(
   file: File,
   config: CloudinaryConfig,
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  signal?: AbortSignal
 ): Promise<UploadResult> {
   // Validate configuration
   if (!config.cloudName || !config.uploadPreset) {
@@ -61,7 +62,7 @@ export async function uploadToCloudinary(
 
   try {
     // Use XMLHttpRequest for progress tracking
-    return await uploadWithProgress(uploadUrl, formData, onProgress);
+    return await uploadWithProgress(uploadUrl, formData, onProgress, signal);
   } catch (error) {
     if (error instanceof UploadError) {
       throw error;
@@ -77,14 +78,23 @@ export async function uploadToCloudinary(
 
 /**
  * Upload with progress tracking using XMLHttpRequest
+ * CRITICAL FIX: Added AbortSignal support for upload cancellation
  */
 function uploadWithProgress(
   url: string,
   formData: FormData,
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  signal?: AbortSignal
 ): Promise<UploadResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+
+    // CRITICAL FIX: Support upload cancellation via AbortSignal
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        xhr.abort();
+      });
+    }
 
     // Track upload progress
     if (onProgress) {
@@ -117,7 +127,8 @@ function uploadWithProgress(
           };
           
           resolve(result);
-        } catch (error) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_error) {
           reject(new UploadError(
             'Failed to parse Cloudinary response',
             'UNKNOWN'

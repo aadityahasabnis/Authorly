@@ -1,5 +1,5 @@
 /**
- * TableOfContents - Extracts headings from HTML and renders navigation
+ * AuthorlyTOC - Extracts headings from HTML and renders navigation
  * A self-contained component with all styles included
  */
 
@@ -12,7 +12,7 @@ export interface TocItem {
   children: TocItem[];
 }
 
-export interface TableOfContentsProps {
+export interface AuthorlyTOCProps {
   /** HTML content to extract headings from */
   html: string;
   /** Enable dark mode */
@@ -38,6 +38,10 @@ export interface TableOfContentsProps {
   /** Initial collapsed state */
   defaultCollapsed?: boolean;
 }
+
+/** @deprecated Use AuthorlyTOCProps instead */
+export type TableOfContentsProps = AuthorlyTOCProps;
+
 
 // Parse headings from HTML and build nested TOC
 function parseHeadings(html: string, minLevel: number, maxLevel: number): TocItem[] {
@@ -217,15 +221,15 @@ const TocList: React.FC<{
 };
 
 /**
- * TableOfContents - Generates navigation from HTML headings
+ * AuthorlyTOC - Generates navigation from HTML headings
  * 
  * @example
  * ```tsx
- * import { TableOfContents } from 'authorly';
+ * import { AuthorlyTOC } from 'authorly';
  * 
  * function Sidebar({ html }) {
  *   return (
- *     <TableOfContents 
+ *     <AuthorlyTOC 
  *       html={html} 
  *       darkMode={false}
  *       title="Contents"
@@ -237,7 +241,7 @@ const TocList: React.FC<{
  * }
  * ```
  */
-export const TableOfContents: React.FC<TableOfContentsProps> = ({
+export const AuthorlyTOC: React.FC<AuthorlyTOCProps> = ({
   html,
   darkMode = false,
   className = '',
@@ -342,7 +346,11 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
   );
 };
 
-export default TableOfContents;
+/** @deprecated Use AuthorlyTOC instead */
+export const TableOfContents = AuthorlyTOC;
+
+export default AuthorlyTOC;
 
 // Export utility functions for custom implementations
 export { parseHeadings };
+

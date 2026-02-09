@@ -146,6 +146,21 @@ export const videoBlock: BlockDefinition = {
  * Get embed URL for common video platforms
  */
 export function getEmbedUrl(url: string): string | null {
+  // PROFESSIONAL FIX: Validate URL is safe before processing
+  // Prevent XSS attacks via javascript: or data: URLs
+  try {
+    const urlObj = new URL(url);
+    // Only allow http: and https: protocols
+    if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+      console.warn('Invalid video URL protocol:', urlObj.protocol);
+      return null;
+    }
+  } catch (_e) {
+    // Invalid URL format
+    console.warn('Invalid video URL format:', url);
+    return null;
+  }
+
   // YouTube
   const ytMatch = url.match(VIDEO_PATTERNS.youtube);
   if (ytMatch) {
@@ -164,10 +179,11 @@ export function getEmbedUrl(url: string): string | null {
     return `https://www.dailymotion.com/embed/video/${dmMatch[1]}`;
   }
 
-  // Check if it's already an embed URL
-  if (url.includes('youtube.com/embed/') || 
-      url.includes('player.vimeo.com/') ||
-      url.includes('dailymotion.com/embed/')) {
+  // PROFESSIONAL FIX: Strict validation for embed URLs
+  // Only accept URLs from trusted domains with proper structure
+  if (url.startsWith('https://www.youtube.com/embed/') || 
+      url.startsWith('https://player.vimeo.com/video/') ||
+      url.startsWith('https://www.dailymotion.com/embed/video/')) {
     return url;
   }
 
