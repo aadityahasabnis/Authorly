@@ -3056,16 +3056,30 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         const selection = window.getSelection();
         const range = selection?.getRangeAt(0);
 
-        // Get content after cursor
+        // Get content after cursor (only within current list item, not nested lists)
         let afterContent = '';
         if (range && editableContent) {
           const afterRange = document.createRange();
           afterRange.setStart(range.endContainer, range.endOffset);
+          
+          // Only extract to end of current editable content, not nested lists
           afterRange.setEndAfter(editableContent.lastChild || editableContent);
           const fragment = afterRange.extractContents();
+          
+          // Remove any nested lists from the fragment (they should stay with current item)
           const temp = document.createElement('div');
           temp.appendChild(fragment);
-          afterContent = temp.innerHTML;
+          
+          // Remove nested list elements from temp
+          const nestedLists = temp.querySelectorAll('.cb-nested-list');
+          nestedLists.forEach(nestedList => {
+            // Move nested list back to original li
+            if (li) {
+              li.appendChild(nestedList);
+            }
+          });
+          
+          afterContent = temp.innerHTML.trim();
         }
 
         // Create new list item
@@ -3115,7 +3129,109 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       return;
     }
 
-    // Backspace at start
+    // Backspace in lists - handle empty items and outdenting
+    if (e.key === 'Backspace' && (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList')) {
+      const li = target.closest('.cb-list-item') as HTMLElement;
+      const editableContent = (blockType === 'checkList'
+        ? li?.querySelector('.cb-checklist-content')
+        : li) as HTMLElement;
+      
+      if (li && editableContent && isCursorAtStart(editableContent)) {
+        const content = editableContent.textContent?.trim() || '';
+        
+        // Empty list item - remove it or outdent
+        if (content === '') {
+          e.preventDefault();
+          saveToHistoryImmediate('Remove empty list item');
+          
+          const isNested = li.parentElement?.classList.contains('cb-nested-list');
+          
+          if (isNested) {
+            // Outdent empty nested item to parent level
+            const parentList = li.parentElement as HTMLElement;
+            const parentLi = parentList.parentElement as HTMLElement;
+            const grandparentList = parentLi.parentElement as HTMLElement;
+            
+            if (grandparentList) {
+              grandparentList.insertBefore(li, parentLi.nextSibling);
+              
+              // Remove empty nested list
+              if (parentList.children.length === 0) {
+                parentList.remove();
+              }
+              
+              // Focus the moved item
+              const focusTarget = blockType === 'checkList'
+                ? li.querySelector('.cb-checklist-content') as HTMLElement
+                : li;
+              if (focusTarget) {
+                focusTarget.focus();
+              }
+            }
+          } else {
+            // Top-level empty item
+            const listElement = li.closest('ul, ol') as HTMLElement;
+            const items = listElement?.querySelectorAll(':scope > li');
+            
+            if (items && items.length === 1) {
+              // Last item - transform entire block to paragraph
+              if (blockId) {
+                transformBlockType(blockId, 'paragraph');
+              }
+            } else if (items && items.length > 1) {
+              // Multiple items - just remove this empty one and focus previous
+              const prevItem = li.previousElementSibling as HTMLElement;
+              const nextItem = li.nextElementSibling as HTMLElement;
+              
+              li.remove();
+              
+              // Focus previous or next item
+              const targetItem = prevItem || nextItem;
+              if (targetItem) {
+                const focusTarget = blockType === 'checkList'
+                  ? targetItem.querySelector('.cb-checklist-content') as HTMLElement
+                  : targetItem;
+                if (focusTarget) {
+                  moveCursorToEnd(focusTarget);
+                  focusTarget.focus();
+                }
+              }
+            }
+          }
+          
+          emitChange();
+          return;
+        }
+        
+        // Non-empty item at start - outdent if nested
+        if (li.parentElement?.classList.contains('cb-nested-list')) {
+          e.preventDefault();
+          saveToHistoryImmediate('Outdent list item');
+          
+          const parentList = li.parentElement as HTMLElement;
+          const parentLi = parentList.parentElement as HTMLElement;
+          const grandparentList = parentLi.parentElement as HTMLElement;
+          
+          if (grandparentList) {
+            // Move this item to parent level
+            grandparentList.insertBefore(li, parentLi.nextSibling);
+            
+            // Remove empty nested list
+            if (parentList.children.length === 0) {
+              parentList.remove();
+            }
+            
+            // Keep focus on the item
+            editableContent.focus();
+          }
+          
+          emitChange();
+          return;
+        }
+      }
+    }
+
+    // Backspace at start (for non-list blocks)
     if (e.key === 'Backspace' && isCursorAtStart(target)) {
       // Transform to paragraph or merge
       if (blockType && blockType !== 'paragraph' && blockType !== 'divider') {
