@@ -2,7 +2,7 @@
  * Toolbar Component - Professional with floating popovers
  */
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ToolbarProps, BlockType } from '../core/types';
 import {
@@ -185,6 +185,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     { color: '#e5e7eb', label: 'Gray' },
     { color: 'transparent', label: 'None' },
   ];
+
+  // FIXED (Bug #20): Optimize year range from 201 to 51 options (±25 years)
+  // Most use cases don't need dates beyond ±25 years from current year
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years: JSX.Element[] = [];
+    const yearRange = 25; // ±25 years is sufficient for most use cases
+    for (let year = currentYear - yearRange; year <= currentYear + yearRange; year++) {
+      years.push(
+        <option key={year} value={year}>
+          {year}
+        </option>
+      );
+    }
+    return years;
+  }, []); // Empty deps - only calculate once on mount
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -1914,18 +1930,7 @@ ${html}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {(() => {
-                    const currentYear = new Date().getFullYear();
-                    const years: JSX.Element[] = [];
-                    for (let year = currentYear - 100; year <= currentYear + 100; year++) {
-                      years.push(
-                        <option key={year} value={year}>
-                          {year}
-                        </option>
-                      );
-                    }
-                    return years;
-                  })()}
+                  {yearOptions}
                 </select>
               </div>
               <button

@@ -1,4 +1,10 @@
 # Bugs
+
+## Block bugs ->
+
+### in the code block If I hit a space -> then the focus goes away.. and it does not work.. see that - and undo/redo is not working in that too
+
+### 
 ### Editor Bugs:
 
 1 ✅ I cant see the accordion button in the toolbar .. -> I cant add the accordion in the editor _. but I can add through the / command popover _. see why the toolbar does not have the accordion button

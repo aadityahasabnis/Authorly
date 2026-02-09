@@ -109,7 +109,7 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
   const initialContentLoadedRef = useRef(false); // Track if initial content was loaded
   const saveToHistoryImmediateRef = useRef<(() => void) | null>(null); // Ref for history save function
 
-  // Enhanced history with cursor position tracking
+  // Enhanced history with cursor position tracking and operation descriptions
   interface HistoryEntry {
     html: string;
     cursorPosition: {
@@ -118,6 +118,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       isCollapsed: boolean;
     } | null;
     selectedBlockIds: string[]; // Track multi-block selection
+    operation?: string; // Description of the operation
+    timestamp: number; // When this entry was created
   }
 
   const undoStackRef = useRef<HistoryEntry[]>([]); // Enhanced undo stack
@@ -1168,7 +1170,7 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
   }, []);
 
   // Save to history - IMMEDIATE (for structural changes like add/delete block)
-  const saveToHistoryImmediate = useCallback(() => {
+  const saveToHistoryImmediate = useCallback((operation?: string) => {
     // PROFESSIONAL FIX: Throttle rapid saves (minimum 50ms between saves)
     // This prevents duplicate history entries when multiple operations happen in quick succession
     const now = Date.now();
@@ -1201,6 +1203,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       html: currentHTML,
       cursorPosition,
       selectedBlockIds: Array.from(selectedBlockIds), // Save current selection
+      operation: operation || 'Edit content',
+      timestamp: now,
     };
 
     // CRITICAL FIX (Bug #16): Limit both undo AND redo stacks to prevent memory leak
@@ -1268,6 +1272,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         html: currentHTML,
         cursorPosition: currentCursor,
         selectedBlockIds: Array.from(selectedBlockIds),
+        operation: "Current state before undo",
+        timestamp: Date.now(),
       };
       
       // Save current state to redo stack (limit to 50 entries)
@@ -1329,6 +1335,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         html: currentHTML,
         cursorPosition: currentCursor,
         selectedBlockIds: Array.from(selectedBlockIds),
+        operation: "Current state before redo",
+        timestamp: Date.now(),
       };
       
       // Save current state to undo stack (limit to 50 entries)
@@ -2808,8 +2816,10 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
             // Create new nested list
             const listType = blockType === 'numberedList' ? 'ol' : 'ul';
             nestedList = document.createElement(listType);
-            nestedList.className = `cb-list cb-nested-list`;
+            // CRITICAL FIX: Add both nested-list class AND the specific list type class for proper CSS styling
+            nestedList.className = `cb-list cb-nested-list cb-${blockType}`;
             prevSibling.appendChild(nestedList);
+            console.log(`📝 Created nested list (Tab indent) with classes: "${nestedList.className}" for blockType: ${blockType}`);
           }
 
           // Move current item to nested list
@@ -2930,8 +2940,10 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         // Create new nested list
         const listType = blockType === 'numberedList' ? 'ol' : 'ul';
         nestedList = document.createElement(listType);
-        nestedList.className = `cb-list cb-nested-list`;
+        // CRITICAL FIX: Add both nested-list class AND the specific list type class for proper CSS styling
+        nestedList.className = `cb-list cb-nested-list cb-${blockType}`;
         li.appendChild(nestedList);
+        console.log(`📝 Created nested list (Shift+Enter) with classes: "${nestedList.className}" for blockType: ${blockType}`);
       }
 
       // Create new list item
@@ -3183,30 +3195,259 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
     }
 
     // Arrow navigation between blocks
-    if (e.key === 'ArrowUp' && isCursorAtStart(target)) {
-      const prevBlock = block?.previousElementSibling as HTMLElement;
-      if (prevBlock && prevBlock.classList.contains('cb-block')) {
-        e.preventDefault();
-        const prevEditable = prevBlock.querySelector('[contenteditable="true"]') as HTMLElement;
-        if (prevEditable) {
-          prevEditable.focus();
-          moveCursorToEnd(prevEditable);
+    // ENHANCED: Full nested list support with level-aware navigation
+    if (e.key === 'ArrowUp') {
+      // For list blocks, handle manual navigation between list items with nested support
+      if (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList') {
+        const targetListItem = target.closest('.cb-list-item');
+        
+        if (targetListItem) {
+          // Get the direct parent list (not the root container)
+          const parentList = targetListItem.parentElement as HTMLElement;
+          
+          // Get only direct children list items of this specific list level
+          const siblingListItems = Array.from(parentList.children).filter(child => 
+            child.classList.contains('cb-list-item')
+          ) as HTMLElement[];
+          
+          const currentIndex = siblingListItems.indexOf(targetListItem as HTMLElement);
+          
+          // Get the actual editable element to check cursor position
+          const editableElement = blockType === 'checkList' 
+            ? targetListItem.querySelector('.cb-checklist-content') as HTMLElement
+            : targetListItem as HTMLElement;
+          
+          const isAtStart = editableElement && isCursorAtStart(editableElement);
+          
+          // If cursor is NOT at start, let browser handle (allows cursor movement within item)
+          if (!isAtStart) {
+            return;
+          }
+          
+          // Cursor IS at start - handle navigation
+          if (currentIndex === 0) {
+            // We're at the first item of this list level
+            const isNestedList = parentList.classList.contains('cb-nested-list');
+            
+            if (isNestedList) {
+              // We're in a nested list - move to the parent list item
+              e.preventDefault();
+              const parentListItem = parentList.closest('.cb-list-item') as HTMLElement;
+              if (parentListItem) {
+                const parentEditable = blockType === 'checkList'
+                  ? parentListItem.querySelector('.cb-checklist-content') as HTMLElement
+                  : parentListItem as HTMLElement;
+                
+                if (parentEditable) {
+                  parentEditable.focus();
+                  moveCursorToEnd(parentEditable);
+                  console.log('🔼 Arrow Up: Moved to parent list item from nested list');
+                }
+              }
+              return;
+            } else {
+              // We're at the first item of the main list - navigate to previous block
+              e.preventDefault();
+              console.log('🔼 Arrow Up: Navigating away from first list item to previous block');
+              const prevBlock = block?.previousElementSibling as HTMLElement;
+              if (prevBlock && prevBlock.classList.contains('cb-block')) {
+                const prevEditable = prevBlock.querySelector('[contenteditable="true"]') as HTMLElement;
+                if (prevEditable) {
+                  prevEditable.focus();
+                  moveCursorToEnd(prevEditable);
+                }
+              }
+              return;
+            }
+          } else {
+            // Move to previous list item at the same level
+            e.preventDefault();
+            const prevListItem = siblingListItems[currentIndex - 1];
+            
+            // Check if previous item has a nested list - if so, move to last item of nested list
+            const prevNestedList = prevListItem.querySelector(':scope > .cb-nested-list');
+            if (prevNestedList) {
+              const nestedItems = Array.from(prevNestedList.children).filter(child =>
+                child.classList.contains('cb-list-item')
+              ) as HTMLElement[];
+              
+              if (nestedItems.length > 0) {
+                const lastNestedItem = nestedItems[nestedItems.length - 1];
+                const lastNestedEditable = blockType === 'checkList'
+                  ? lastNestedItem.querySelector('.cb-checklist-content') as HTMLElement
+                  : lastNestedItem as HTMLElement;
+                
+                if (lastNestedEditable) {
+                  lastNestedEditable.focus();
+                  moveCursorToEnd(lastNestedEditable);
+                  console.log('🔼 Arrow Up: Moved to last nested item of previous sibling');
+                  return;
+                }
+              }
+            }
+            
+            // No nested list or nested list is empty - move to previous sibling
+            const prevEditableElement = blockType === 'checkList'
+              ? prevListItem.querySelector('.cb-checklist-content') as HTMLElement
+              : prevListItem as HTMLElement;
+            
+            if (prevEditableElement) {
+              prevEditableElement.focus();
+              moveCursorToEnd(prevEditableElement);
+              console.log('🔼 Arrow Up: Moved to previous list item at same level (', currentIndex, '->', currentIndex - 1, ')');
+            }
+            return;
+          }
         }
+      } else if (isCursorAtStart(target)) {
+        // Regular block navigation (non-list)
+        e.preventDefault();
+        const prevBlock = block?.previousElementSibling as HTMLElement;
+        if (prevBlock && prevBlock.classList.contains('cb-block')) {
+          const prevEditable = prevBlock.querySelector('[contenteditable="true"]') as HTMLElement;
+          if (prevEditable) {
+            prevEditable.focus();
+            moveCursorToEnd(prevEditable);
+          }
+        }
+        return;
       }
-      return;
     }
 
-    if (e.key === 'ArrowDown' && isCursorAtEnd(target)) {
-      const nextBlock = block?.nextElementSibling as HTMLElement;
-      if (nextBlock && nextBlock.classList.contains('cb-block')) {
-        e.preventDefault();
-        const nextEditable = nextBlock.querySelector('[contenteditable="true"]') as HTMLElement;
-        if (nextEditable) {
-          nextEditable.focus();
-          moveCursorToStart(nextEditable);
+    if (e.key === 'ArrowDown') {
+      // For list blocks, handle manual navigation between list items with nested support
+      if (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList') {
+        const targetListItem = target.closest('.cb-list-item');
+        
+        if (targetListItem) {
+          // Get the direct parent list (not the root container)
+          const parentList = targetListItem.parentElement as HTMLElement;
+          
+          // Get only direct children list items of this specific list level
+          const siblingListItems = Array.from(parentList.children).filter(child => 
+            child.classList.contains('cb-list-item')
+          ) as HTMLElement[];
+          
+          const currentIndex = siblingListItems.indexOf(targetListItem as HTMLElement);
+          
+          // Get the actual editable element to check cursor position
+          const editableElement = blockType === 'checkList' 
+            ? targetListItem.querySelector('.cb-checklist-content') as HTMLElement
+            : targetListItem as HTMLElement;
+          
+          const isAtEnd = editableElement && isCursorAtEnd(editableElement);
+          
+          // If cursor is NOT at end, let browser handle (allows cursor movement within item)
+          if (!isAtEnd) {
+            return;
+          }
+          
+          // Cursor IS at end - handle navigation
+          // First check if current item has a nested list
+          const nestedList = targetListItem.querySelector(':scope > .cb-nested-list');
+          if (nestedList) {
+            const nestedItems = Array.from(nestedList.children).filter(child =>
+              child.classList.contains('cb-list-item')
+            ) as HTMLElement[];
+            
+            if (nestedItems.length > 0) {
+              // Move to first item of nested list
+              e.preventDefault();
+              const firstNestedItem = nestedItems[0];
+              const nestedEditable = blockType === 'checkList'
+                ? firstNestedItem.querySelector('.cb-checklist-content') as HTMLElement
+                : firstNestedItem as HTMLElement;
+              
+              if (nestedEditable) {
+                nestedEditable.focus();
+                moveCursorToStart(nestedEditable);
+                console.log('🔽 Arrow Down: Moved to first nested list item');
+              }
+              return;
+            }
+          }
+          
+          // No nested list - check if there's a next sibling at same level
+          if (currentIndex < siblingListItems.length - 1) {
+            // Move to next list item at the same level
+            e.preventDefault();
+            const nextListItem = siblingListItems[currentIndex + 1];
+            const nextEditableElement = blockType === 'checkList'
+              ? nextListItem.querySelector('.cb-checklist-content') as HTMLElement
+              : nextListItem as HTMLElement;
+            
+            if (nextEditableElement) {
+              nextEditableElement.focus();
+              moveCursorToStart(nextEditableElement);
+              console.log('🔽 Arrow Down: Moved to next list item at same level (', currentIndex, '->', currentIndex + 1, ')');
+            }
+            return;
+          } else {
+            // We're at the last item of this list level
+            const isNestedList = parentList.classList.contains('cb-nested-list');
+            
+            if (isNestedList) {
+              // We're in a nested list - try to move to next item in parent level
+              e.preventDefault();
+              const parentListItem = parentList.closest('.cb-list-item') as HTMLElement;
+              if (parentListItem) {
+                const grandParentList = parentListItem.parentElement as HTMLElement;
+                const parentSiblings = Array.from(grandParentList.children).filter(child => 
+                  child.classList.contains('cb-list-item')
+                ) as HTMLElement[];
+                
+                const parentIndex = parentSiblings.indexOf(parentListItem as HTMLElement);
+                if (parentIndex < parentSiblings.length - 1) {
+                  // Move to next item at parent level
+                  const nextParentItem = parentSiblings[parentIndex + 1];
+                  const nextParentEditable = blockType === 'checkList'
+                    ? nextParentItem.querySelector('.cb-checklist-content') as HTMLElement
+                    : nextParentItem as HTMLElement;
+                  
+                  if (nextParentEditable) {
+                    nextParentEditable.focus();
+                    moveCursorToStart(nextParentEditable);
+                    console.log('🔽 Arrow Down: Moved to next item at parent level');
+                  }
+                  return;
+                } else {
+                  // We're at the last nested item of the last parent item
+                  // Try to navigate up further or exit the list
+                  console.log('🔽 Arrow Down: At last nested item, checking for higher parent level');
+                  // For now, just stay here (could be enhanced to go up multiple levels)
+                  return;
+                }
+              }
+              return;
+            } else {
+              // We're at the last item of the main list - navigate to next block
+              e.preventDefault();
+              console.log('🔽 Arrow Down: Navigating away from last list item to next block');
+              const nextBlock = block?.nextElementSibling as HTMLElement;
+              if (nextBlock && nextBlock.classList.contains('cb-block')) {
+                const nextEditable = nextBlock.querySelector('[contenteditable="true"]') as HTMLElement;
+                if (nextEditable) {
+                  nextEditable.focus();
+                  moveCursorToStart(nextEditable);
+                }
+              }
+              return;
+            }
+          }
         }
+      } else if (isCursorAtEnd(target)) {
+        // Regular block navigation (non-list)
+        e.preventDefault();
+        const nextBlock = block?.nextElementSibling as HTMLElement;
+        if (nextBlock && nextBlock.classList.contains('cb-block')) {
+          const nextEditable = nextBlock.querySelector('[contenteditable="true"]') as HTMLElement;
+          if (nextEditable) {
+            nextEditable.focus();
+            moveCursorToStart(nextEditable);
+          }
+        }
+        return;
       }
-      return;
     }
   }, [
     readOnly, showBlockMenu, selectedBlockIds, saveToHistoryImmediate, createBlockWithControls,

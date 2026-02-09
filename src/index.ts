@@ -75,7 +75,8 @@ export { uploadToCloudinary, optimizeCloudinaryUrl, generateCloudinarySrcset } f
 export { uploadToS3, generateS3Url, generateCloudFrontUrl } from './services/s3Upload';
 export * from './types/upload';
 
-// Paste handling
+// Paste handling & Sanitization
+// SECURITY NOTE: All external HTML content should be sanitized via these functions
 export { sanitizeHtml, sanitizePaste, convertPlainTextToHtml, normalizeHtml } from './paste/sanitize';
 
 // Drag & drop

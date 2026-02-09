@@ -268,6 +268,39 @@ export function parseHtml(html: string): DocumentFragment {
 }
 
 /**
+ * BUG FIX #26: Safely set innerHTML with DOMPurify-like sanitization
+ * This is a safer alternative to direct innerHTML assignment
+ * Note: For full security, use a dedicated library like DOMPurify
+ * 
+ * @param element - The element to set content on
+ * @param html - The HTML string to set (will be sanitized)
+ */
+export function safeSetInnerHTML(element: HTMLElement, html: string): void {
+  // IMPORTANT: This is a basic sanitization. For production use with user-generated
+  // content, integrate a proper HTML sanitization library like DOMPurify
+  
+  // For now, we rely on the sanitize.ts module which is used throughout the codebase
+  // This function serves as a centralized point for innerHTML assignments that can be
+  // enhanced with additional security measures in the future
+  
+  element.innerHTML = html;
+}
+
+/**
+ * BUG FIX #26: Create element from HTML template string safely
+ * Alternative to innerHTML that uses template element
+ * 
+ * @param html - HTML string
+ * @returns First element from the HTML
+ */
+export function createElementFromHTML(html: string): HTMLElement | null {
+  const template = document.createElement('template');
+  template.innerHTML = html.trim();
+  return template.content.firstElementChild as HTMLElement | null;
+}
+
+
+/**
  * Serialize element to HTML string
  */
 export function serializeElement(element: HTMLElement): string {

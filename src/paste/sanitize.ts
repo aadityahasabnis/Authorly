@@ -1,6 +1,23 @@
 /**
  * Paste Sanitization - Clean and normalize pasted content
- * This is CRITICAL for maintaining clean HTML output
+ * This is CRITICAL for maintaining clean HTML output and security
+ * 
+ * SECURITY MODEL (Bug #26 - innerHTML usage):
+ * ============================================
+ * All external content (paste, drag-drop, initial HTML) MUST flow through this
+ * sanitization module before being set via innerHTML in block definitions.
+ * 
+ * Flow:
+ * 1. External content → sanitize() → Safe HTML
+ * 2. Safe HTML → block.create(data) → innerHTML (SAFE)
+ * 3. Editor content → block.getData() → innerHTML (SAFE - from editor itself)
+ * 
+ * innerHTML is used throughout the codebase but is SAFE because:
+ * - All external content is sanitized here first
+ * - Editor-generated content comes from contenteditable (user typed, not injected)
+ * - No direct user input → innerHTML path exists
+ * 
+ * For additional security, consider integrating DOMPurify library in production.
  */
 
 // Allowed tags that will be preserved

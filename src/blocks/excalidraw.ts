@@ -124,7 +124,7 @@ export const excalidrawBlock: BlockDefinition = {
     let elements: readonly ExcalidrawElement[] | undefined;
     let appState: Partial<AppState> | undefined;
 
-    // IMPROVED (Bug #6): Better error handling with user feedback
+    // LOW-PRIORITY FIX (Bug #27): Better error handling with user notification
     try {
       const elementsStr = element.getAttribute('data-excalidraw-elements');
       if (elementsStr) {
@@ -132,10 +132,19 @@ export const excalidrawBlock: BlockDefinition = {
       }
     } catch (e) {
       console.error('Failed to parse Excalidraw elements:', e);
-      // Check if there's a stored error
+      // Check if there's a stored error and show visual feedback
       const errorMsg = element.getAttribute('data-excalidraw-error');
       if (errorMsg) {
         console.error('Stored error:', errorMsg);
+        // Add error indicator to element for visual feedback
+        const placeholder = element.querySelector('.cb-excalidraw-placeholder');
+        if (placeholder) {
+          const errorIndicator = document.createElement('div');
+          errorIndicator.className = 'cb-excalidraw-error';
+          errorIndicator.style.cssText = 'color: #dc2626; font-size: 12px; margin-top: 8px;';
+          errorIndicator.textContent = `⚠ Error loading drawing: ${errorMsg}`;
+          placeholder.appendChild(errorIndicator);
+        }
       }
     }
 

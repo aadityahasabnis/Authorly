@@ -23,6 +23,10 @@ export const paragraphBlock: BlockDefinition = {
     p.setAttribute('data-block-type', 'paragraph');
     
     if (data?.content) {
+      // SECURITY NOTE (Bug #26): innerHTML is safe here because content comes from:
+      // 1. Editor's own serialization (getData), or
+      // 2. Paste handler which sanitizes via sanitize.ts
+      // All external content is sanitized before reaching this point
       p.innerHTML = data.content;
     }
     
@@ -54,6 +58,7 @@ export const paragraphBlock: BlockDefinition = {
 
   update(element: HTMLElement, data: Partial<ParagraphData>): void {
     if (data.content !== undefined) {
+      // SECURITY NOTE (Bug #26): innerHTML is safe here - see create() method
       element.innerHTML = data.content;
     }
     if (data.align) {

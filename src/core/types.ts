@@ -63,6 +63,8 @@ export interface BlockDefinition {
   /** Keyboard shortcut */
   shortcut?: string;
   /** Create the DOM element */
+  // MEDIUM-PRIORITY NOTE (Bug #11, #24): Using 'any' for block handler flexibility
+  // Each block type has different data shapes. Alternative: use generic BlockConfig<T>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   create: (data?: any) => HTMLElement;
   /** Get block data from element */
