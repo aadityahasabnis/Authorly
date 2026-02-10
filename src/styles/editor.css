@@ -1657,6 +1657,12 @@ ol.cb-numberedList ol.cb-nested-list.cb-numberedList ol.cb-nested-list.cb-number
 
 .cb-accordion-title-text {
   flex: 1;
+  cursor: text;
+  outline: none;
+}
+
+.cb-accordion-title-text:focus {
+  outline: none;
 }
 
 .cb-accordion-title-text:empty::before {
@@ -1666,6 +1672,9 @@ ol.cb-numberedList ol.cb-nested-list.cb-numberedList ol.cb-nested-list.cb-number
 
 .cb-accordion-chevron {
   transition: transform 0.2s ease;
+  cursor: pointer;
+  margin-left: 8px;
+  flex-shrink: 0;
 }
 
 .cb-accordion[open] .cb-accordion-chevron {

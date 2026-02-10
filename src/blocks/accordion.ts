@@ -44,6 +44,34 @@ export const accordionBlock: BlockDefinition = {
       </svg>
     `;
     
+    // CRITICAL FIX: Prevent summary default toggle behavior when clicking/typing in title text
+    // The summary element has special browser behavior that intercepts clicks and keys
+    summary.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      // Only prevent default if clicking on title text (allow chevron to work)
+      if (target.closest('.cb-accordion-title-text')) {
+        e.preventDefault();
+      }
+    });
+    
+    summary.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement;
+      // Prevent space/enter from toggling when in title text
+      if (target.closest('.cb-accordion-title-text') && (e.key === ' ' || e.key === 'Enter')) {
+        e.preventDefault();
+        // For space, manually insert it
+        if (e.key === ' ') {
+          document.execCommand('insertText', false, ' ');
+        }
+      }
+    });
+    
+    // Handle chevron click to toggle accordion
+    chevron.addEventListener('click', (e) => {
+      e.stopPropagation();
+      details.open = !details.open;
+    });
+    
     summary.appendChild(titleText);
     summary.appendChild(chevron);
     details.appendChild(summary);

@@ -1916,7 +1916,6 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
 
       // Don't interfere with input/textarea interactions
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-        console.log('🎯 Click on input field, allowing default behavior:', target.className);
         return;
       }
 
@@ -2706,61 +2705,77 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
     }
 
     // Handle escaping from inline code with Right Arrow or Space at the end
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-
-      // Check if we're at the end of a <code> element
-      let node = range.startContainer;
-      let codeElement: HTMLElement | null = null;
-
-      // Find parent <code> element
-      while (node && node !== contentRef.current) {
-        if (node instanceof HTMLElement && node.tagName === 'CODE') {
-          codeElement = node;
-          break;
-        }
-        node = node.parentNode as Node;
+    // But NOT in code blocks or accordion titles (they need space to work normally)
+    if ((e.key === 'ArrowRight' || e.key === ' ')) {
+      // Get the actual focused element
+      const focusedElement = document.activeElement as HTMLElement;
+      
+      // Skip if we're in a code block or accordion title
+      const inCodeBlock = blockType === 'code';
+      const inAccordionTitle = !!target.closest('.cb-accordion-title-text') || !!focusedElement?.closest('.cb-accordion-title-text');
+      const inAccordionContent = !!target.closest('.cb-accordion-content') || !!focusedElement?.closest('.cb-accordion-content');
+      
+      if (inCodeBlock || inAccordionTitle || inAccordionContent) {
+        // Let space/arrow work normally in code blocks, accordion titles, and accordion content
+        return;
       }
+      
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
 
-      if (codeElement && selection.isCollapsed) {
-        // Check if cursor is at the very end of the code element
-        const isAtEnd = range.startOffset === (range.startContainer.textContent?.length || 0) &&
-          range.startContainer === codeElement.lastChild;
+        // Check if we're at the end of a <code> element
+        let node = range.startContainer;
+        let codeElement: HTMLElement | null = null;
 
-        // Handle Right Arrow or Space when at the end of inline code
-        if (isAtEnd && (e.key === 'ArrowRight' || e.key === ' ')) {
-          e.preventDefault();
-
-          // Create a zero-width space after the code element to place cursor
-          let nextNode = codeElement.nextSibling;
-
-          // If there's no next sibling or it's another inline element, create a text node
-          if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
-            const textNode = document.createTextNode(e.key === ' ' ? ' ' : '\u200B');
-            codeElement.parentNode?.insertBefore(textNode, codeElement.nextSibling);
-            nextNode = textNode;
-          } else if (e.key === ' ' && nextNode.nodeType === Node.TEXT_NODE) {
-            // Add space to existing text node
-            nextNode.textContent = ' ' + (nextNode.textContent || '');
+        // Find parent <code> element
+        while (node && node !== contentRef.current) {
+          if (node instanceof HTMLElement && node.tagName === 'CODE') {
+            codeElement = node;
+            break;
           }
+          node = node.parentNode as Node;
+        }
 
-          // Move cursor to after the code element
-          const newRange = document.createRange();
-          if (e.key === ' ') {
-            newRange.setStart(nextNode, 1);
-            newRange.setEnd(nextNode, 1);
-          } else {
-            newRange.setStartAfter(codeElement);
-            newRange.setEndAfter(codeElement);
-          }
-          selection.removeAllRanges();
-          selection.addRange(newRange);
+        if (codeElement && selection.isCollapsed) {
+          // Check if cursor is at the very end of the code element
+          const isAtEnd = range.startOffset === (range.startContainer.textContent?.length || 0) &&
+            range.startContainer === codeElement.lastChild;
 
-          if (e.key === ' ') {
-            emitChange();
+          // Handle Right Arrow or Space when at the end of inline code
+          if (isAtEnd && (e.key === 'ArrowRight' || e.key === ' ')) {
+            e.preventDefault();
+
+            // Create a zero-width space after the code element to place cursor
+            let nextNode = codeElement.nextSibling;
+
+            // If there's no next sibling or it's another inline element, create a text node
+            if (!nextNode || nextNode.nodeType !== Node.TEXT_NODE) {
+              const textNode = document.createTextNode(e.key === ' ' ? ' ' : '\u200B');
+              codeElement.parentNode?.insertBefore(textNode, codeElement.nextSibling);
+              nextNode = textNode;
+            } else if (e.key === ' ' && nextNode.nodeType === Node.TEXT_NODE) {
+              // Add space to existing text node
+              nextNode.textContent = ' ' + (nextNode.textContent || '');
+            }
+
+            // Move cursor to after the code element
+            const newRange = document.createRange();
+            if (e.key === ' ') {
+              newRange.setStart(nextNode, 1);
+              newRange.setEnd(nextNode, 1);
+            } else {
+              newRange.setStartAfter(codeElement);
+              newRange.setEndAfter(codeElement);
+            }
+            selection.removeAllRanges();
+            selection.addRange(newRange);
+
+            if (e.key === ' ') {
+              emitChange();
+            }
+            return;
           }
-          return;
         }
       }
     }
@@ -3011,22 +3026,51 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
           const isNested = li.parentElement?.classList.contains('cb-nested-list');
 
           if (isNested) {
-            // Outdent the item instead of exiting
+            // Exit nested list - remove old item and create fresh parent-level item
             const parentList = li.parentElement as HTMLElement;
             const parentLi = parentList.parentElement as HTMLElement;
             const grandparentList = parentLi.parentElement as HTMLElement;
-
+            
+            // Remove the empty nested item FIRST
+            li.remove();
+            
+            // Clean up empty nested list container
+            if (parentList.children.length === 0) {
+              parentList.remove();
+            }
+            
+            // Create a BRAND NEW parent-level item (don't reuse old one)
             if (grandparentList) {
-              grandparentList.insertBefore(li, parentLi.nextSibling);
-              if (parentList.children.length === 0) {
-                parentList.remove();
-              }
-              // Focus the moved item
-              const focusTarget = blockType === 'checkList'
-                ? li.querySelector('.cb-checklist-content') as HTMLElement
-                : li;
-              if (focusTarget) {
-                focusTarget.focus();
+              const newLi = document.createElement('li');
+              newLi.className = 'cb-list-item';
+              newLi.setAttribute('data-item-id', generateId());
+              
+              if (blockType === 'checkList') {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'cb-checklist-wrapper';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'cb-checkbox';
+                checkbox.setAttribute('tabindex', '-1');
+                
+                const contentSpan = document.createElement('span');
+                contentSpan.className = 'cb-checklist-content';
+                contentSpan.setAttribute('contenteditable', 'true');
+                
+                wrapper.appendChild(checkbox);
+                wrapper.appendChild(contentSpan);
+                newLi.appendChild(wrapper);
+                
+                // Insert new item at parent level AFTER the parent item
+                grandparentList.insertBefore(newLi, parentLi.nextSibling);
+                contentSpan.focus();
+              } else {
+                newLi.setAttribute('contenteditable', 'true');
+                
+                // Insert new item at parent level AFTER the parent item
+                grandparentList.insertBefore(newLi, parentLi.nextSibling);
+                newLi.focus();
               }
             }
           } else {
@@ -3147,24 +3191,49 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
           const isNested = li.parentElement?.classList.contains('cb-nested-list');
           
           if (isNested) {
-            // Outdent empty nested item to parent level
+            // Remove empty nested item and focus parent item
             const parentList = li.parentElement as HTMLElement;
             const parentLi = parentList.parentElement as HTMLElement;
-            const grandparentList = parentLi.parentElement as HTMLElement;
             
-            if (grandparentList) {
-              grandparentList.insertBefore(li, parentLi.nextSibling);
-              
-              // Remove empty nested list
-              if (parentList.children.length === 0) {
-                parentList.remove();
-              }
-              
-              // Focus the moved item
+            // Remove the empty nested item
+            li.remove();
+            
+            // Clean up empty nested list
+            if (parentList.children.length === 0) {
+              parentList.remove();
+            }
+            
+            // Focus the parent list item at the end of its content
+            if (parentLi) {
               const focusTarget = blockType === 'checkList'
-                ? li.querySelector('.cb-checklist-content') as HTMLElement
-                : li;
+                ? parentLi.querySelector('.cb-checklist-content') as HTMLElement
+                : parentLi;
               if (focusTarget) {
+                // Move cursor to end of parent item's text (before nested lists)
+                const textNodes: Node[] = [];
+                for (let i = 0; i < focusTarget.childNodes.length; i++) {
+                  const node = focusTarget.childNodes[i];
+                  if (node.nodeType === Node.TEXT_NODE || 
+                      (node.nodeType === Node.ELEMENT_NODE && !(node as Element).classList.contains('cb-nested-list'))) {
+                    textNodes.push(node);
+                  }
+                }
+                
+                if (textNodes.length > 0) {
+                  const lastTextNode = textNodes[textNodes.length - 1];
+                  const range = document.createRange();
+                  const sel = window.getSelection();
+                  
+                  if (lastTextNode.nodeType === Node.TEXT_NODE) {
+                    range.setStart(lastTextNode, lastTextNode.textContent?.length || 0);
+                  } else {
+                    range.setStartAfter(lastTextNode);
+                  }
+                  range.collapse(true);
+                  sel?.removeAllRanges();
+                  sel?.addRange(range);
+                }
+                
                 focusTarget.focus();
               }
             }

@@ -53,6 +53,43 @@ export default defineConfig(({ mode }) => {
     };
   }
 
+  if (mode === 'cdn') {
+    // CDN/UMD build mode for use in HTML pages with <script> tags
+    return {
+      plugins: [react()],
+      build: {
+        lib: {
+          entry: path.resolve(__dirname, 'src/index.ts'),
+          name: 'Authorly',
+          formats: ['umd'],
+          fileName: () => 'authorly.umd.js',
+        },
+        rollupOptions: {
+          external: ['react', 'react-dom', 'react/jsx-runtime'],
+          output: {
+            globals: {
+              'react': 'React',
+              'react-dom': 'ReactDOM',
+              'react/jsx-runtime': 'React',
+            } as Record<string, string>,
+            assetFileNames: 'authorly.[ext]',
+          },
+        },
+        cssCodeSplit: false,
+        sourcemap: false,
+        minify: 'esbuild',
+        target: 'es2020',
+        cssMinify: true,
+        outDir: 'dist/cdn',
+      },
+      resolve: {
+        alias: {
+          '@': path.resolve(__dirname, 'src'),
+        },
+      },
+    };
+  }
+
   // Development mode
   return {
     plugins: [react()],

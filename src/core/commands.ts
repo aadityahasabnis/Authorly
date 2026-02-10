@@ -67,12 +67,20 @@ export function toggleFormat(
   }
 
   if (isActive) {
-    // Remove format
+    // Remove format - find all matching elements in selection and unwrap them
     const elements = findElementsInSelection(tag, container);
     elements.forEach(el => unwrapElement(el));
   } else {
-    // Apply format
-    wrapSelection(tag, attributes);
+    // Before applying format, check if selection contains any formatted elements
+    // This prevents nested formatting (e.g. <code><code>text</code></code>)
+    const existingElements = findElementsInSelection(tag, container);
+    if (existingElements.length > 0) {
+      // Format already exists in selection - unwrap instead of nesting
+      existingElements.forEach(el => unwrapElement(el));
+    } else {
+      // No existing format - apply it
+      wrapSelection(tag, attributes);
+    }
   }
 }
 

@@ -34,13 +34,47 @@ export const TestPage: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [activeTest, setActiveTest] = useState<string | null>(null);
 
-  // Upload config (optional - remove if not needed)
+  // Upload config - use Cloudinary if configured, otherwise use mock for testing
   const uploadConfig = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
     ? createCloudinaryConfig({
         cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME,
         uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET,
       })
-    : undefined;
+    : {
+        // Mock upload service for testing progress bar
+        provider: 'custom' as const,
+        customUpload: async (file: File, onProgress?: (progress: any) => void) => {
+          // Simulate upload with progress
+          console.log('📤 Mock upload started:', file.name);
+          
+          // Simulate progress increments
+          const progressSteps = [0, 10, 25, 40, 55, 70, 85, 95, 100];
+          for (const percent of progressSteps) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            onProgress?.({
+              loaded: (file.size * percent) / 100,
+              total: file.size,
+              percent,
+            });
+          }
+          
+          // Return mock result with base64 URL
+          return new Promise<any>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              console.log('✅ Mock upload complete:', file.name);
+              resolve({
+                url: reader.result as string,
+                width: 800,
+                height: 600,
+                format: file.type.split('/')[1],
+                publicId: `mock-${Date.now()}`,
+              });
+            };
+            reader.readAsDataURL(file);
+          });
+        },
+      };
 
   // Test functions
   const tests = {

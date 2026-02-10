@@ -1414,7 +1414,7 @@ ${html}
             position: 'absolute',
             left: popoverPosition.x,
             top: popoverPosition.y,
-            zIndex: 1000,
+            zIndex: 10001, // Higher than selection toolbar (10000)
           }}
         >
           {/* Link Popover */}
