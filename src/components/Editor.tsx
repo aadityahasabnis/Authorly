@@ -1659,7 +1659,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         </button>
       `;
       const caption = figure.querySelector('figcaption');
-      if (caption) {
+      // Ensure caption is a direct child before using insertBefore
+      if (caption && caption.parentNode === figure) {
         figure.insertBefore(controls, caption);
       } else {
         figure.appendChild(controls);
@@ -1690,7 +1691,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       `;
 
       const caption = figure.querySelector('figcaption');
-      if (caption) {
+      // Ensure caption is a direct child before using insertBefore
+      if (caption && caption.parentNode === figure) {
         figure.insertBefore(altEditor, caption);
       } else {
         figure.appendChild(altEditor);
@@ -2119,7 +2121,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
                 </button>
               `;
               const caption = figure.querySelector('figcaption');
-              if (caption) {
+              // Ensure caption is a direct child before using insertBefore
+              if (caption && caption.parentNode === figure) {
                 figure.insertBefore(controls, caption);
               } else {
                 figure.appendChild(controls);

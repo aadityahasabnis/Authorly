@@ -77,7 +77,7 @@ interface ToolbarGroup {
   buttons: ToolbarButton[];
 }
 
-type PopoverType = 'link' | 'highlight' | 'textColor' | 'date' | 'time' | 'textCase' | null;
+type PopoverType = 'link' | 'highlight' | 'textColor' | 'date' | 'time' | 'textCase' | 'alignment' | 'insert' | null;
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   editor,
@@ -1166,12 +1166,6 @@ ${html}
           shortcut: 'Ctrl+U',
         },
         {
-          icon: Strikethrough,
-          label: 'Strikethrough',
-          action: () => toggleStrikethrough(editor.container),
-          isActive: () => formatState.strikethrough,
-        },
-        {
           icon: Code,
           label: 'Inline Code',
           action: () => toggleInlineCode(editor.container),
@@ -1198,47 +1192,13 @@ ${html}
         },
         {
           icon: CaseSensitive,
-          label: 'Text Case',
+          label: 'Text Case & Strikethrough',
           action: (e) => openPopover('textCase', e),
         },
         {
-          icon: Calendar,
-          label: 'Insert Date',
-          action: (e) => openPopover('date', e),
-        },
-        {
-          icon: Clock,
-          label: 'Insert Time',
-          action: (e) => openPopover('time', e),
-        },
-      ],
-    },
-    {
-      name: 'alignment',
-      buttons: [
-        {
           icon: AlignLeft,
-          label: 'Align Left',
-          action: () => {
-            const block = getBlockFromChild(document.activeElement);
-            if (block) setAlignment(block, 'left');
-          },
-        },
-        {
-          icon: AlignCenter,
-          label: 'Align Center',
-          action: () => {
-            const block = getBlockFromChild(document.activeElement);
-            if (block) setAlignment(block, 'center');
-          },
-        },
-        {
-          icon: AlignRight,
-          label: 'Align Right',
-          action: () => {
-            const block = getBlockFromChild(document.activeElement);
-            if (block) setAlignment(block, 'right');
-          },
+          label: 'Text Alignment',
+          action: (e) => openPopover('alignment', e),
         },
       ],
     },
@@ -1289,49 +1249,19 @@ ${html}
           action: () => handleBlockAction('quote'),
         },
         {
-          icon: FileCode,
-          label: 'Code Block',
-          action: () => handleBlockAction('code'),
-        },
-      ],
-    },
-    {
-      name: 'media',
-      buttons: [
-        {
-          icon: Image,
-          label: 'Image',
-          action: () => editor.insertBlock('image'),
-        },
-        {
-          icon: Video,
-          label: 'Video',
-          action: () => editor.insertBlock('video'),
-        },
-        {
-          icon: PenTool,
-          label: 'Excalidraw',
-          action: () => editor.insertBlock('excalidraw'),
-        },
-        {
           icon: Table,
           label: 'Table',
           action: () => editor.insertBlock('table'),
         },
-        {
-          icon: AlertCircle,
-          label: 'Callout',
-          action: () => handleBlockAction('callout'),
-        },
+      ],
+    },
+    {
+      name: 'insert',
+      buttons: [
         {
           icon: ChevronDown,
-          label: 'Accordion',
-          action: () => handleBlockAction('accordion'),
-        },
-        {
-          icon: Minus,
-          label: 'Divider',
-          action: () => editor.insertBlock('divider'),
+          label: 'Insert',
+          action: (e) => openPopover('insert', e),
         },
       ],
     },
@@ -1772,11 +1702,11 @@ ${html}
             </div>
           )}
 
-          {/* Text Case Popover */}
+          {/* Text Case & Strikethrough Popover */}
           {activePopover === 'textCase' && (
             <div className="cb-popover-content cb-case-popover">
               <div className="cb-popover-header">
-                <span>Text Case</span>
+                <span>Text Case & Strikethrough</span>
                 <button 
                   type="button" 
                   className="cb-popover-close"
@@ -1810,6 +1740,212 @@ ${html}
                   >
                     <span>Abc</span>
                     <span className="cb-case-label">Capitalize</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-case-option-btn"
+                    onClick={() => {
+                      if (editor?.container) {
+                        toggleStrikethrough(editor.container);
+                        setActivePopover(null);
+                      }
+                    }}
+                  >
+                    <Strikethrough size={18} />
+                    <span className="cb-case-label">Strikethrough</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Text Alignment Popover */}
+          {activePopover === 'alignment' && (
+            <div className="cb-popover-content cb-alignment-popover">
+              <div className="cb-popover-header">
+                <span>Text Alignment</span>
+                <button 
+                  type="button" 
+                  className="cb-popover-close"
+                  onClick={handleClosePopover}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="cb-popover-body">
+                <div className="cb-alignment-options">
+                  <button
+                    type="button"
+                    className="cb-alignment-option-btn"
+                    onClick={() => {
+                      const block = getBlockFromChild(document.activeElement);
+                      if (block) {
+                        setAlignment(block, 'left');
+                        setActivePopover(null);
+                      }
+                    }}
+                    title="Align Left"
+                  >
+                    <AlignLeft size={18} />
+                    <span className="cb-alignment-label">Left</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-alignment-option-btn"
+                    onClick={() => {
+                      const block = getBlockFromChild(document.activeElement);
+                      if (block) {
+                        setAlignment(block, 'center');
+                        setActivePopover(null);
+                      }
+                    }}
+                    title="Align Center"
+                  >
+                    <AlignCenter size={18} />
+                    <span className="cb-alignment-label">Center</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-alignment-option-btn"
+                    onClick={() => {
+                      const block = getBlockFromChild(document.activeElement);
+                      if (block) {
+                        setAlignment(block, 'right');
+                        setActivePopover(null);
+                      }
+                    }}
+                    title="Align Right"
+                  >
+                    <AlignRight size={18} />
+                    <span className="cb-alignment-label">Right</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Insert Popover */}
+          {activePopover === 'insert' && (
+            <div className="cb-popover-content cb-insert-popover">
+              <div className="cb-popover-header">
+                <span>Insert</span>
+                <button 
+                  type="button" 
+                  className="cb-popover-close"
+                  onClick={handleClosePopover}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="cb-popover-body">
+                <div className="cb-insert-grid">
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={(e) => {
+                      setActivePopover(null);
+                      openPopover('date', e);
+                    }}
+                    title="Insert Date"
+                  >
+                    <Calendar size={20} />
+                    <span>Date</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={(e) => {
+                      setActivePopover(null);
+                      openPopover('time', e);
+                    }}
+                    title="Insert Time"
+                  >
+                    <Clock size={20} />
+                    <span>Time</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      handleBlockAction('accordion');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Accordion"
+                  >
+                    <ChevronDown size={20} />
+                    <span>Accordion</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      handleBlockAction('callout');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Callout"
+                  >
+                    <AlertCircle size={20} />
+                    <span>Callout</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      editor.insertBlock('image');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Image"
+                  >
+                    <Image size={20} />
+                    <span>Image</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      editor.insertBlock('video');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Video"
+                  >
+                    <Video size={20} />
+                    <span>Video</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      handleBlockAction('code');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Code Block"
+                  >
+                    <FileCode size={20} />
+                    <span>Code</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      editor.insertBlock('divider');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Divider"
+                  >
+                    <Minus size={20} />
+                    <span>Divider</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="cb-insert-item"
+                    onClick={() => {
+                      editor.insertBlock('excalidraw');
+                      setActivePopover(null);
+                    }}
+                    title="Insert Excalidraw"
+                  >
+                    <PenTool size={20} />
+                    <span>Excalidraw</span>
                   </button>
                 </div>
               </div>

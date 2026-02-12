@@ -3544,39 +3544,40 @@ mark {
 }
 
 /* ============================================
-   Text Case Popover
+   Text Case Popover - VERTICAL LAYOUT
    ============================================ */
 
 .cb-case-popover {
-  min-width: 200px;
+  min-width: 160px;
 }
 
 .cb-case-options {
   display: flex;
   flex-direction: column;
-  gap: var(--cb-spacing-xs);
+  gap: 2px;
 }
 
 .cb-case-option-btn {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: var(--cb-spacing-sm) var(--cb-spacing-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  background: var(--cb-bg-secondary);
-  border: 1px solid var(--cb-border);
-  border-radius: var(--cb-radius-md);
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   color: var(--cb-text);
   cursor: pointer;
   transition: all 0.15s ease;
+  width: 100%;
 }
 
 .cb-case-option-btn:hover {
-  background: var(--cb-primary);
-  border-color: var(--cb-primary);
-  color: white;
+  background: var(--cb-bg-secondary);
+  color: var(--cb-text);
 }
 
 .cb-case-option-btn:active {
@@ -3586,12 +3587,108 @@ mark {
 .cb-case-option-btn span:first-child {
   font-family: monospace;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.875rem;
+  width: 32px;
 }
 
 .cb-case-label {
   font-size: 0.75rem;
-  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* ============================================
+   Text Alignment Popover - COMPACT HORIZONTAL
+   ============================================ */
+
+.cb-alignment-popover {
+  min-width: auto;
+}
+
+.cb-alignment-options {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+}
+
+.cb-alignment-option-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--cb-bg-secondary);
+  border: 1px solid var(--cb-border);
+  border-radius: 4px;
+  color: var(--cb-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 50px;
+}
+
+.cb-alignment-option-btn:hover {
+  background: var(--cb-primary);
+  border-color: var(--cb-primary);
+  color: white;
+}
+
+.cb-alignment-option-btn:active {
+  transform: scale(0.98);
+}
+
+.cb-alignment-label {
+  font-size: 0.625rem;
+  white-space: nowrap;
+}
+
+/* ============================================
+   Insert Popover - VERTICAL LAYOUT
+   ============================================ */
+
+.cb-insert-popover {
+  min-width: 140px;
+}
+
+.cb-insert-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cb-insert-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--cb-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: auto;
+  width: 100%;
+}
+
+.cb-insert-item:hover {
+  background: var(--cb-bg-secondary);
+  color: var(--cb-text);
+}
+
+.cb-insert-item:active {
+  transform: scale(0.98);
+}
+
+.cb-insert-item span {
+  font-size: 0.625rem;
+  text-align: center;
+  line-height: 1.2;
 }
 
 /* ============================================
