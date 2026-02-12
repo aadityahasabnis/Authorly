@@ -115,6 +115,48 @@ export const codeBlock: BlockDefinition = {
       wrapper.setAttribute('data-language', data.language);
     }
 
+    // CRITICAL FIX: Ensure code element gets focus when clicking anywhere in code block
+    // This ensures proper cursor placement when clicking on wrapper/pre elements
+    const ensureCodeFocus = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      
+      // Don't interfere if clicking on toolbar elements (language selector, copy button)
+      if (target.closest('.cb-code-toolbar')) {
+        return;
+      }
+      
+      // If clicking on code element itself, let browser handle it naturally
+      if (target === code || target.closest('.cb-code') === code) {
+        return; // Do nothing - let contenteditable work normally
+      }
+      
+      // If clicking on wrapper or pre (not the code itself), focus the code element
+      if (target === wrapper || target === pre || target.classList.contains('cb-code-block')) {
+        // Don't prevent default - just ensure focus
+        setTimeout(() => {
+          code.focus();
+          
+          // Place cursor at the end
+          const selection = window.getSelection();
+          if (selection) {
+            const range = document.createRange();
+            if (code.textContent) {
+              range.selectNodeContents(code);
+              range.collapse(false); // Collapse to end
+            } else {
+              range.setStart(code, 0);
+              range.setEnd(code, 0);
+            }
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }, 0);
+      }
+    };
+    
+    wrapper.addEventListener('click', ensureCodeFocus);
+    pre.addEventListener('click', ensureCodeFocus);
+
     return wrapper;
   },
 

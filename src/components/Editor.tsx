@@ -360,9 +360,11 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
     // Create the actual block content
     const blockElement = blockRegistry.createBlock(type, { ...data, id: blockId } as BlockData);
     if (blockElement) {
-      // Remove data attributes from inner element (they're on wrapper now)
-      blockElement.removeAttribute('data-block-id');
-      blockElement.removeAttribute('data-block-type');
+      // CRITICAL FIX: Keep data-block-id on inner element for blocks that need it
+      // Image blocks need the ID for upload handlers to work correctly
+      // Other blocks may need it for interactions too
+      // Don't remove these attributes - they're needed!
+      // NOTE: The wrapper also has these attributes for drag/drop and selection
       content.appendChild(blockElement);
     }
 
@@ -1700,14 +1702,25 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
   const handleImageUpload = useCallback(async (e: Event) => {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
+    
+    console.log('🖼️ handleImageUpload called:', { file: file?.name, hasFile: !!file });
+    
     if (!file) return;
 
     const figure = input.closest('figure.cb-image') as HTMLElement;
-    if (!figure) return;
+    if (!figure) {
+      console.error('❌ No figure element found for image upload');
+      return;
+    }
 
     // Store block ID to detect if block is removed during upload
     const blockId = figure.getAttribute('data-block-id');
-    if (!blockId) return;
+    if (!blockId) {
+      console.error('❌ No block ID found on figure');
+      return;
+    }
+
+    console.log('✅ Starting image upload process:', { blockId, fileName: file.name, fileSize: file.size });
 
     // Helper to check if block still exists
     const getBlock = (): HTMLElement | null => {
@@ -1718,6 +1731,7 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
 
     // Check if upload service is available
     if (!uploadService) {
+      console.log('📦 No upload service - using base64 fallback');
       // CRITICAL FIX: Validate file size BEFORE processing to prevent browser hangs
       // A 50MB image becomes ~66MB base64 string, which can crash the browser
       const MAX_BASE64_SIZE_MB = 10; // 10MB limit for base64 images
@@ -2999,8 +3013,29 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
 
     // Enter key
     if (e.key === 'Enter' && !e.shiftKey) {
-      // Don't split code blocks on enter
-      if (blockType === 'code') return;
+      // Special handling for code blocks - insert newline character instead of default behavior
+      if (blockType === 'code') {
+        e.preventDefault();
+        
+        const selection = window.getSelection();
+        const range = selection?.getRangeAt(0);
+        
+        if (range) {
+          // Insert a newline character
+          const newline = document.createTextNode('\n');
+          range.deleteContents();
+          range.insertNode(newline);
+          
+          // Move cursor after the newline
+          range.setStartAfter(newline);
+          range.setEndAfter(newline);
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          
+          emitChange();
+        }
+        return;
+      }
 
       // For lists, handle specially
       if (blockType === 'bulletList' || blockType === 'numberedList' || blockType === 'checkList') {
@@ -3016,7 +3051,7 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         const content = editableContent?.textContent?.trim() || '';
 
         if (content === '') {
-          // Empty list item - exit list and create paragraph
+          // Empty list item - exit list or exit nested level
           e.preventDefault();
           saveToHistoryImmediate(); // Use immediate save for structural change
 
@@ -3026,7 +3061,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
           const isNested = li.parentElement?.classList.contains('cb-nested-list');
 
           if (isNested) {
-            // Exit nested list - remove old item and create fresh parent-level item
+            // CRITICAL FIX: Exit nested list immediately on FIRST Enter press (don't create another empty item)
+            // This prevents the bug where an extra empty item remains in nested list
             const parentList = li.parentElement as HTMLElement;
             const parentLi = parentList.parentElement as HTMLElement;
             const grandparentList = parentLi.parentElement as HTMLElement;
@@ -4134,6 +4170,29 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
       console.log('✅ Allowing paste in input field:', target.className);
       // DO NOT call preventDefault - let browser handle it
+      return;
+    }
+
+    // CRITICAL FIX: For code blocks, paste as plain text only (no HTML formatting)
+    const codeElement = target.closest('.cb-code');
+    if (codeElement) {
+      e.preventDefault();
+      const plainText = e.clipboardData.getData('text/plain');
+      if (plainText) {
+        // Insert plain text at cursor position
+        const selection = window.getSelection();
+        const range = selection?.getRangeAt(0);
+        if (range) {
+          range.deleteContents();
+          const textNode = document.createTextNode(plainText);
+          range.insertNode(textNode);
+          range.setStartAfter(textNode);
+          range.setEndAfter(textNode);
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          emitChange();
+        }
+      }
       return;
     }
 

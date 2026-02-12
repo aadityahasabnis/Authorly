@@ -869,6 +869,7 @@ ol.cb-numberedList ol.cb-nested-list.cb-numberedList ol.cb-nested-list.cb-number
   border: 1px solid var(--cb-border);
   border-radius: var(--cb-radius-md);
   overflow: hidden;
+  cursor: text; /* Show text cursor when hovering over code block */
 }
 
 .cb-code-toolbar {
@@ -878,6 +879,7 @@ ol.cb-numberedList ol.cb-nested-list.cb-numberedList ol.cb-nested-list.cb-number
   padding: var(--cb-spacing-xs) var(--cb-spacing-sm);
   background: var(--cb-bg-tertiary);
   border-bottom: 1px solid var(--cb-border);
+  cursor: default; /* Normal cursor for toolbar */
 }
 
 .cb-code-language {
@@ -887,6 +889,7 @@ ol.cb-numberedList ol.cb-nested-list.cb-numberedList ol.cb-nested-list.cb-number
   border: 1px solid var(--cb-border);
   border-radius: var(--cb-radius-sm);
   color: var(--cb-text);
+  cursor: pointer;
 }
 
 .cb-code-copy {
@@ -909,18 +912,30 @@ ol.cb-numberedList ol.cb-nested-list.cb-numberedList ol.cb-nested-list.cb-number
   padding: var(--cb-spacing-md);
   background: var(--cb-bg-secondary);
   overflow-x: auto;
+  cursor: text; /* Show text cursor */
 }
 
 .cb-code {
   font-family: var(--cb-font-mono);
   font-size: 0.875rem;
   line-height: 1.6;
-  white-space: pre;
+  white-space: pre; /* Preserve whitespace and newlines */
+  outline: none; /* Remove default focus outline */
+  cursor: text; /* Show text cursor */
+  display: block; /* Ensure proper block display */
+  min-height: 1.6em; /* Minimum height for empty code blocks */
+  tab-size: 2; /* Tab width */
+  -moz-tab-size: 2;
+}
+
+.cb-code:focus {
+  outline: none; /* No outline on focus - wrapper handles visual feedback */
 }
 
 .cb-code:empty::before {
   content: attr(data-placeholder);
   color: var(--cb-text-placeholder);
+  pointer-events: none; /* Don't block clicks on placeholder */
 }
 
 /* Image */
