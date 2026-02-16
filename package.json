@@ -18,15 +18,15 @@
       "import": "./dist/index.esm.js",
       "require": "./dist/index.cjs.js"
     },
-    "./styles": "./dist/authorly-editor.css",
-    "./styles.css": "./dist/authorly-editor.css",
+    "./styles": "./dist/authorly.css",
+    "./styles.css": "./dist/authorly.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist/index.cjs.js",
     "dist/index.esm.js",
     "dist/index.d.ts",
-    "dist/authorly-editor.css",
+    "dist/authorly.css",
     "dist/src/**/*.d.ts",
     "README.md",
     "CHANGELOG.md",
