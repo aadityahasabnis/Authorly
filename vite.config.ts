@@ -34,6 +34,10 @@ export default defineConfig(({ mode }) => {
               react: 'React',
               'react-dom': 'ReactDOM',
             },
+            assetFileNames: (assetInfo) => {
+              if (assetInfo.name === 'style.css') return 'authorly.css';
+              return assetInfo.name || '';
+            },
           },
         },
         cssCodeSplit: false,
