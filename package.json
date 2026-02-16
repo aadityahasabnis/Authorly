@@ -1,10 +1,10 @@
 {
-  "name": "authorly-editor",
+  "name": "@aadityahasabnis/authorly",
   "version": "0.1.14",
   "description": "A rich text editor for authors, blogs, and documentation with clean, publish-ready output.",
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://npm.pkg.github.com"
   },
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -41,8 +41,8 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
-    "publish:github": "npm pkg set name=@aadityahasabnis/authorly && npm pkg set publishConfig.registry=https://npm.pkg.github.com && npm version patch && npm publish && npm pkg set name=authorly-editor && npm pkg set publishConfig.registry=https://registry.npmjs.org",
-    "publish:npm": "npm run build && npm publish --registry=https://registry.npmjs.org"
+    "publish:github": "npm version patch && npm publish",
+    "publish:npm": "npm pkg set name=authorly-editor npm run build && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"
   },
   "peerDependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
