@@ -18,14 +18,15 @@
       "import": "./dist/index.esm.js",
       "require": "./dist/index.cjs.js"
     },
-    "./styles.css": "./dist/style.css",
+    "./styles": "./dist/authorly.css",
+    "./styles.css": "./dist/authorly.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist/index.cjs.js",
     "dist/index.esm.js",
     "dist/index.d.ts",
-    "dist/style.css",
+    "dist/authorly.css",
     "dist/src/**/*.d.ts",
     "README.md",
     "CHANGELOG.md",
@@ -40,8 +41,8 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
-    "publish:github": "npm version patch && npm publish",
-    "publish:npm": "npm run build && npm pkg set name=authorly-editor && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"
+    "publish:github": "npm pkg set name=@aadityahasabnis/authorly && npm pkg set publishConfig.registry=https://npm.pkg.github.com && npm version patch && npm publish && npm pkg set name=authorly-editor && npm pkg set publishConfig.registry=https://registry.npmjs.org",
+    "publish:npm": "npm run build && npm publish --registry=https://registry.npmjs.org"
   },
   "peerDependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
