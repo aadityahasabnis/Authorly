@@ -42,7 +42,7 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
     "publish:github": "npm version patch && npm publish",
-    "publish:npm": "npm pkg set name=authorly-editor npm run build && npm publish --registry=https://registry.npmjs.org && npm pkg set name=@aadityahasabnis/authorly"
+    "publish:npm": "npm pkg set name=authorly-editor && npm pkg set publishConfig.registry=https://registry.npmjs.org && npm publish && npm pkg set name=@aadityahasabnis/authorly && npm pkg set publishConfig.registry=https://npm.pkg.github.com"
   },
   "peerDependencies": {
     "@excalidraw/excalidraw": "^0.18.0",
