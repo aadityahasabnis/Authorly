@@ -1,6 +1,6 @@
 {
   "name": "@aadityahasabnis/authorly",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "A rich text editor for authors, blogs, and documentation with clean, publish-ready output.",
   "publishConfig": {
     "access": "public",
