@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { 
-  ContentBlocksEditor, 
-  ContentBlocksRenderer, 
-  TableOfContents,
+  AuthorlyEditor, 
+  AuthorlyRenderer, 
+  AuthorlyTOC,
   type EditorRef 
 } from '../src';
 
@@ -29,7 +29,7 @@ const BlogEditorExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) => {
           </span>
         )}
       </div>
-      <ContentBlocksEditor
+      <AuthorlyEditor
         initialContent={content}
         onChange={setContent}
         onSave={handleSave}
@@ -64,7 +64,7 @@ const DocumentationExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) => 
         </button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: showPreview ? '1fr 1fr' : '1fr', gap: '1rem' }}>
-        <ContentBlocksEditor
+        <AuthorlyEditor
           initialContent={content}
           onChange={setContent}
           darkMode={darkMode}
@@ -79,7 +79,7 @@ const DocumentationExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) => 
               borderRadius: '0.5rem',
               height: 'fit-content',
             }}>
-              <TableOfContents html={content} darkMode={darkMode} title="Contents" maxLevel={2} />
+              <AuthorlyTOC html={content} darkMode={darkMode} title="Contents" maxLevel={2} />
             </div>
             <div style={{
               padding: '1.5rem',
@@ -87,7 +87,7 @@ const DocumentationExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) => 
               border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
               borderRadius: '0.5rem',
             }}>
-              <ContentBlocksRenderer html={content} darkMode={darkMode} enableHeadingIds />
+              <AuthorlyRenderer html={content} darkMode={darkMode} enableHeadingIds />
             </div>
           </div>
         )}
@@ -127,7 +127,7 @@ const ArticleRendererExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) =
         borderRadius: '0.5rem',
         maxWidth: '700px',
       }}>
-        <ContentBlocksRenderer html={article} darkMode={darkMode} enableCodeCopy />
+        <AuthorlyRenderer html={article} darkMode={darkMode} enableCodeCopy />
       </div>
     </div>
   );
@@ -171,7 +171,7 @@ const TemplateSystemExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) =>
           ))}
         </div>
       </div>
-      <ContentBlocksEditor
+      <AuthorlyEditor
         ref={editorRef}
         initialContent="<p>Select a template above to get started...</p>"
         darkMode={darkMode}
@@ -216,7 +216,7 @@ const NewsletterEditorExample: React.FC<{ darkMode: boolean }> = ({ darkMode }) 
           </button>
         </div>
       </div>
-      <ContentBlocksEditor
+      <AuthorlyEditor
         initialContent={content}
         onChange={setContent}
         darkMode={darkMode}

@@ -1,6 +1,14 @@
 /**
- * Test Page - Real-world testing scenarios
- * Test all editor features with minimal, production-ready code
+ * Modern Test Page - Authorly Editor
+ * 
+ * Tests all features with production-ready patterns:
+ * - Compact vertical popovers (Text Case, Insert, Alignment)
+ * - Fixed image upload with Cloudinary
+ * - Code block improvements (click, type, paste, Enter key)
+ * - EditorRef API testing
+ * - Dark mode support
+ * - Upload callbacks
+ * - Clean HTML output
  */
 
 import React, { useState, useRef } from 'react';
@@ -10,47 +18,78 @@ import '../src/styles/editor.css';
 
 export const TestPage: React.FC = () => {
   const editorRef = useRef<EditorRef>(null);
-  const [content, setContent] = useState(`<h1>Test All Features</h1>
-<p>This page tests <strong>all editor features</strong> in real-world scenarios.</p>
+  const [content, setContent] = useState(`<h1>✨ Authorly Editor - Feature Test</h1>
+<p>Welcome to the <strong>comprehensive test page</strong> for all editor features!</p>
 
-<h2>1. Text Formatting</h2>
-<p>Test <strong>bold</strong>, <em>italic</em>, <u>underline</u>, <s>strikethrough</s>, and <code>inline code</code>.</p>
+<h2>📝 Text Formatting</h2>
+<p>Try: <strong>bold</strong>, <em>italic</em>, <u>underline</u>, <s>strikethrough</s>, and <code>inline code</code></p>
 
-<h2>2. Lists</h2>
+<h2>📋 Lists & Structure</h2>
 <ul>
-  <li>Bullet list item 1</li>
-  <li>Bullet list item 2</li>
+  <li>Bullet lists with Tab/Shift+Tab indentation</li>
+  <li>Ordered lists (numbered)</li>
+  <li>Checklist items with interactive checkboxes</li>
 </ul>
 
-<h2>3. Table</h2>
-<p>Type <code>/table</code> to insert a table.</p>
+<h2>🎨 New Features - Compact Toolbar</h2>
+<p><strong>Vertical Popovers:</strong></p>
+<ul>
+  <li>Text Case popover (lowercase, UPPERCASE, Capitalize, Strikethrough)</li>
+  <li>Insert popover (Date, Time, Accordion, Callout, Image, Video, Code, Divider, Excalidraw)</li>
+  <li>Alignment buttons (Left, Center, Right in horizontal layout)</li>
+</ul>
 
-<h2>4. Code Block</h2>
-<p>Type <code>/code</code> for code blocks.</p>
+<h2>🖼️ Image Upload (Fixed)</h2>
+<p>Upload images via:</p>
+<ul>
+  <li>Click Insert → Image</li>
+  <li>Slash command: <code>/image</code></li>
+  <li>Drag and drop</li>
+  <li>Paste from clipboard</li>
+</ul>
 
-<h2>5. Images</h2>
-<p>Type <code>/image</code> to upload images.</p>`);
+<h2>💻 Code Blocks (Fixed)</h2>
+<p>Type <code>/code</code> to create a code block. Test these fixes:</p>
+<ul>
+  <li>✅ Click to focus and place cursor correctly</li>
+  <li>✅ Type smoothly without interference</li>
+  <li>✅ Press Enter to insert newline (not &lt;br&gt; tags)</li>
+  <li>✅ Paste plain text only (strips HTML)</li>
+</ul>
+
+<h2>📊 Tables</h2>
+<p>Type <code>/table</code> to insert a table. Use Tab/Shift+Tab to navigate cells.</p>
+
+<h2>🎯 Advanced Blocks</h2>
+<ul>
+  <li><strong>Accordion:</strong> <code>/accordion</code> - Collapsible sections</li>
+  <li><strong>Callout:</strong> <code>/callout</code> - Info, Warning, Success, Error boxes</li>
+  <li><strong>Quote:</strong> <code>/quote</code> - Blockquotes</li>
+  <li><strong>Divider:</strong> <code>/divider</code> - Horizontal rule</li>
+  <li><strong>Date/Time:</strong> <code>/date</code> or <code>/time</code> - Interactive pickers</li>
+</ul>`);
 
   const [darkMode, setDarkMode] = useState(false);
   const [activeTest, setActiveTest] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
 
-  // Upload config - use Cloudinary if configured, otherwise use mock for testing
+  // Cloudinary config with upload callbacks
   const uploadConfig = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME
     ? createCloudinaryConfig({
         cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME,
         uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET,
+        folder: import.meta.env.VITE_CLOUDINARY_FOLDER || 'authorly-test',
       })
     : {
-        // Mock upload service for testing progress bar
+        // Mock upload for testing without Cloudinary
         provider: 'custom' as const,
         customUpload: async (file: File, onProgress?: (progress: any) => void) => {
-          // Simulate upload with progress
-          console.log('📤 Mock upload started:', file.name);
+          console.log('📤 Mock upload:', file.name);
+          setUploadStatus(`Uploading ${file.name}...`);
           
-          // Simulate progress increments
-          const progressSteps = [0, 10, 25, 40, 55, 70, 85, 95, 100];
-          for (const percent of progressSteps) {
-            await new Promise(resolve => setTimeout(resolve, 200));
+          const steps = [0, 15, 30, 50, 70, 85, 100];
+          for (const percent of steps) {
+            await new Promise(resolve => setTimeout(resolve, 150));
             onProgress?.({
               loaded: (file.size * percent) / 100,
               total: file.size,
@@ -58,11 +97,11 @@ export const TestPage: React.FC = () => {
             });
           }
           
-          // Return mock result with base64 URL
-          return new Promise<any>((resolve) => {
-            const reader = new FileReader();
+          const reader = new FileReader();
+          return new Promise((resolve) => {
             reader.onloadend = () => {
-              console.log('✅ Mock upload complete:', file.name);
+              setUploadStatus(`✅ ${file.name} uploaded`);
+              setTimeout(() => setUploadStatus(''), 3000);
               resolve({
                 url: reader.result as string,
                 width: 800,
@@ -76,15 +115,26 @@ export const TestPage: React.FC = () => {
         },
       };
 
-  // Test functions
-  const tests = {
+  // EditorRef API tests
+  const editorTests = {
     getHTML: () => {
       const html = editorRef.current?.getHTML();
-      console.log('Editor HTML:', html);
-      alert('HTML logged to console');
+      console.log('📄 HTML Output:', html);
+      alert('HTML output logged to console (check DevTools)');
+    },
+    getCleanHTML: () => {
+      const html = editorRef.current?.getHTML({
+        stripEditorUI: true,
+        stripDataAttributes: true,
+      });
+      console.log('🧹 Clean HTML:', html);
+      alert('Clean HTML (no editor classes) logged to console');
     },
     setHTML: () => {
-      editorRef.current?.setHTML('<h1>New Content</h1><p>Content was replaced programmatically.</p>');
+      editorRef.current?.setHTML('<h1>Programmatic Update</h1><p>Content replaced via setHTML() method.</p>');
+    },
+    insertBlock: () => {
+      editorRef.current?.insertBlock?.('callout');
     },
     focus: () => {
       editorRef.current?.focus();
@@ -96,126 +146,94 @@ export const TestPage: React.FC = () => {
       editorRef.current?.redo();
     },
     clear: () => {
-      editorRef.current?.setHTML('<p></p>');
-      editorRef.current?.focus();
+      if (confirm('Clear all content?')) {
+        editorRef.current?.setHTML('<p></p>');
+        editorRef.current?.focus();
+      }
     },
   };
 
   return (
     <div style={{
       minHeight: '100vh',
-      padding: '2rem',
-      paddingTop: '4rem',
+      padding: '1.5rem',
+      paddingTop: '3.5rem',
       background: darkMode ? '#0f172a' : '#ffffff',
-      fontFamily: 'system-ui, sans-serif',
-      transition: 'background 0.2s',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      transition: 'background 0.2s ease',
     }}>
-      {/* Header */}
+      {/* Header Bar */}
       <div style={{
         maxWidth: '1200px',
-        margin: '0 auto 2rem',
+        margin: '0 auto 1.5rem',
       }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '1rem',
           marginBottom: '1rem',
         }}>
-          <h1 style={{
-            margin: 0,
-            color: darkMode ? '#f1f5f9' : '#0f172a',
-            fontSize: '1.5rem',
-            fontWeight: 600,
-          }}>
-            🧪 Test Page - All Features
-          </h1>
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            style={{
-              padding: '0.5rem 1rem',
-              background: darkMode ? '#1e293b' : '#f1f5f9',
-              border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
-              borderRadius: '0.375rem',
+          <div>
+            <h1 style={{
+              margin: '0 0 0.25rem 0',
               color: darkMode ? '#f1f5f9' : '#0f172a',
-              cursor: 'pointer',
+              fontSize: '1.5rem',
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+            }}>
+              🧪 Authorly Editor - Test Suite
+            </h1>
+            <p style={{
+              margin: 0,
               fontSize: '0.875rem',
-            }}
-          >
-            {darkMode ? '☀️ Light' : '🌙 Dark'}
-          </button>
-        </div>
-
-        {/* Test Controls */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '0.5rem',
-          padding: '1rem',
-          background: darkMode ? '#1e293b' : '#f8fafc',
-          border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
-          borderRadius: '0.5rem',
-        }}>
-          <h3 style={{
-            gridColumn: '1 / -1',
-            margin: '0 0 0.5rem 0',
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            color: darkMode ? '#94a3b8' : '#64748b',
-          }}>
-            🎯 Test Controls (EditorRef Methods)
-          </h3>
-          {Object.entries(tests).map(([name, fn]) => (
-            <button
-              key={name}
-              onClick={() => {
-                setActiveTest(name);
-                fn();
-                setTimeout(() => setActiveTest(null), 300);
-              }}
-              style={{
-                padding: '0.5rem 0.75rem',
-                background: activeTest === name ? '#3b82f6' : (darkMode ? '#334155' : '#ffffff'),
-                border: `1px solid ${darkMode ? '#475569' : '#e2e8f0'}`,
+              color: darkMode ? '#94a3b8' : '#64748b',
+            }}>
+              Test all features including compact toolbar, image upload, and code blocks
+            </p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {uploadStatus && (
+              <span style={{
+                padding: '0.375rem 0.75rem',
+                background: darkMode ? '#1e293b' : '#f0fdf4',
+                border: `1px solid ${darkMode ? '#334155' : '#bbf7d0'}`,
                 borderRadius: '0.375rem',
-                color: activeTest === name ? '#ffffff' : (darkMode ? '#f1f5f9' : '#0f172a'),
-                cursor: 'pointer',
                 fontSize: '0.8125rem',
+                color: darkMode ? '#94a3b8' : '#16a34a',
+              }}>
+                {uploadStatus}
+              </span>
+            )}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              style={{
+                padding: '0.5rem 1rem',
+                background: darkMode ? '#1e293b' : '#f8fafc',
+                border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+                borderRadius: '0.375rem',
+                color: darkMode ? '#f1f5f9' : '#0f172a',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
                 fontWeight: 500,
                 transition: 'all 0.15s',
               }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = darkMode ? '#334155' : '#e2e8f0';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = darkMode ? '#1e293b' : '#f8fafc';
+              }}
             >
-              {name}
+              {darkMode ? '☀️ Light Mode' : '🌙 Dark Mode'}
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Editor */}
-      <div style={{
-        maxWidth: '1200px',
-        margin: '0 auto',
-      }}>
-        <div style={{
-          background: darkMode ? '#1e293b' : '#ffffff',
-          border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
-          borderRadius: '0.5rem',
-          padding: '1.5rem',
-          minHeight: '600px',
-        }}>
-          <AuthorlyEditor
-            ref={editorRef}
-            initialContent={content}
-            onChange={setContent}
-            onSave={(html) => console.log('Saved:', html)}
-            darkMode={darkMode}
-            imageUploadConfig={uploadConfig}
-            placeholder="Start testing..."
-          />
+          </div>
         </div>
 
-        {/* Instructions */}
+        {/* EditorRef API Controls */}
         <div style={{
-          marginTop: '1.5rem',
           padding: '1rem',
           background: darkMode ? '#1e293b' : '#f8fafc',
           border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
@@ -225,68 +243,244 @@ export const TestPage: React.FC = () => {
             margin: '0 0 0.75rem 0',
             fontSize: '0.875rem',
             fontWeight: 600,
-            color: darkMode ? '#94a3b8' : '#64748b',
+            color: darkMode ? '#cbd5e1' : '#475569',
           }}>
-            📝 Quick Test Guide
+            🎮 EditorRef API Methods
           </h3>
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-            gap: '0.75rem',
-            fontSize: '0.8125rem',
-            color: darkMode ? '#cbd5e1' : '#475569',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+            gap: '0.5rem',
           }}>
-            <div>
-              <strong>Keyboard Shortcuts:</strong>
-              <br />• Ctrl+B = Bold
-              <br />• Ctrl+I = Italic
-              <br />• Ctrl+Z = Undo
-              <br />• Ctrl+Y = Redo
+            {Object.entries(editorTests).map(([name, fn]) => (
+              <button
+                key={name}
+                onClick={() => {
+                  setActiveTest(name);
+                  fn();
+                  setTimeout(() => setActiveTest(null), 250);
+                }}
+                style={{
+                  padding: '0.5rem 0.75rem',
+                  background: activeTest === name 
+                    ? '#3b82f6' 
+                    : darkMode ? '#334155' : '#ffffff',
+                  border: `1px solid ${
+                    activeTest === name 
+                      ? '#3b82f6' 
+                      : darkMode ? '#475569' : '#e2e8f0'
+                  }`,
+                  borderRadius: '0.375rem',
+                  color: activeTest === name 
+                    ? '#ffffff' 
+                    : darkMode ? '#f1f5f9' : '#0f172a',
+                  cursor: 'pointer',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  transition: 'all 0.15s',
+                  textTransform: 'capitalize',
+                }}
+                onMouseEnter={(e) => {
+                  if (activeTest !== name) {
+                    e.currentTarget.style.background = darkMode ? '#475569' : '#f1f5f9';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (activeTest !== name) {
+                    e.currentTarget.style.background = darkMode ? '#334155' : '#ffffff';
+                  }
+                }}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Editor */}
+      <div style={{
+        maxWidth: '1200px',
+        margin: '0 auto',
+      }}>
+        <div style={{
+          background: darkMode ? '#1e293b' : '#ffffff',
+          border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+          borderRadius: '0.5rem',
+          overflow: 'hidden',
+          boxShadow: darkMode 
+            ? '0 4px 6px -1px rgba(0, 0, 0, 0.3)' 
+            : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+        }}>
+          <AuthorlyEditor
+            ref={editorRef}
+            initialContent={content}
+            onChange={setContent}
+            onSave={(html) => {
+              console.log('💾 Saved:', html);
+              alert('Content saved! (Check console for HTML)');
+            }}
+            darkMode={darkMode}
+            imageUploadConfig={uploadConfig}
+            onUploadStart={(filename) => {
+              console.log('📤 Upload started:', filename);
+              setUploadStatus(`Uploading ${filename}...`);
+            }}
+            onUploadProgress={(progress) => {
+              console.log('📊 Progress:', progress.percent + '%');
+            }}
+            onUploadSuccess={(result) => {
+              console.log('✅ Upload success:', result);
+              setUploadStatus(`✅ Upload complete`);
+              setTimeout(() => setUploadStatus(''), 3000);
+            }}
+            onUploadError={(error) => {
+              console.error('❌ Upload error:', error);
+              setUploadStatus(`❌ Upload failed`);
+              setTimeout(() => setUploadStatus(''), 5000);
+            }}
+            placeholder="Start typing or press '/' for commands..."
+            style={{ 
+              minHeight: '600px',
+              padding: '1.5rem',
+            }}
+          />
+        </div>
+
+        {/* Feature Guide */}
+        <div style={{
+          marginTop: '1.5rem',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '1rem',
+        }}>
+          {/* Keyboard Shortcuts */}
+          <div style={{
+            padding: '1rem',
+            background: darkMode ? '#1e293b' : '#f8fafc',
+            border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+            borderRadius: '0.5rem',
+          }}>
+            <h3 style={{
+              margin: '0 0 0.75rem 0',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: darkMode ? '#cbd5e1' : '#475569',
+            }}>
+              ⌨️ Keyboard Shortcuts
+            </h3>
+            <div style={{
+              fontSize: '0.8125rem',
+              color: darkMode ? '#94a3b8' : '#64748b',
+              lineHeight: '1.6',
+            }}>
+              <div><strong>Ctrl+B</strong> - Bold</div>
+              <div><strong>Ctrl+I</strong> - Italic</div>
+              <div><strong>Ctrl+U</strong> - Underline</div>
+              <div><strong>Ctrl+Z</strong> - Undo</div>
+              <div><strong>Ctrl+Y</strong> - Redo</div>
+              <div><strong>Ctrl+S</strong> - Save</div>
+              <div><strong>Ctrl+K</strong> - Insert Link</div>
             </div>
-            <div>
-              <strong>Slash Commands:</strong>
-              <br />• /heading1 = H1
-              <br />• /image = Image
-              <br />• /table = Table
-              <br />• /code = Code Block
+          </div>
+
+          {/* Slash Commands */}
+          <div style={{
+            padding: '1rem',
+            background: darkMode ? '#1e293b' : '#f8fafc',
+            border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
+            borderRadius: '0.5rem',
+          }}>
+            <h3 style={{
+              margin: '0 0 0.75rem 0',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: darkMode ? '#cbd5e1' : '#475569',
+            }}>
+              ⚡ Slash Commands
+            </h3>
+            <div style={{
+              fontSize: '0.8125rem',
+              color: darkMode ? '#94a3b8' : '#64748b',
+              lineHeight: '1.6',
+            }}>
+              <div><strong>/heading1-3</strong> - Headings</div>
+              <div><strong>/image</strong> - Upload Image</div>
+              <div><strong>/table</strong> - Insert Table</div>
+              <div><strong>/code</strong> - Code Block</div>
+              <div><strong>/callout</strong> - Callout Box</div>
+              <div><strong>/accordion</strong> - Accordion</div>
+              <div><strong>/date</strong> - Date Picker</div>
             </div>
-            <div>
-              <strong>Features to Test:</strong>
-              <br />• Image upload
-              <br />• Table navigation (Tab)
-              <br />• Arrow keys in tables
-              <br />• Undo/Redo (fixed)
+          </div>
+
+          {/* New Features */}
+          <div style={{
+            padding: '1rem',
+            background: darkMode ? '#1e293b' : '#eff6ff',
+            border: `1px solid ${darkMode ? '#334155' : '#bfdbfe'}`,
+            borderRadius: '0.5rem',
+          }}>
+            <h3 style={{
+              margin: '0 0 0.75rem 0',
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: darkMode ? '#cbd5e1' : '#1e40af',
+            }}>
+              ✨ Recent Updates
+            </h3>
+            <div style={{
+              fontSize: '0.8125rem',
+              color: darkMode ? '#94a3b8' : '#1e40af',
+              lineHeight: '1.6',
+            }}>
+              <div>✅ Vertical popovers (compact)</div>
+              <div>✅ Fixed image upload</div>
+              <div>✅ Fixed code block editing</div>
+              <div>✅ Enter key in code blocks</div>
+              <div>✅ Paste plain text in code</div>
+              <div>✅ Click to focus code blocks</div>
             </div>
           </div>
         </div>
 
-        {/* Output Preview */}
-        <details style={{ marginTop: '1.5rem' }}>
-          <summary style={{
-            padding: '0.75rem',
-            background: darkMode ? '#1e293b' : '#f8fafc',
+        {/* HTML Output Viewer */}
+        <details 
+          style={{ 
+            marginTop: '1.5rem',
             border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
-            borderRadius: '0.375rem',
+            borderRadius: '0.5rem',
+            overflow: 'hidden',
+          }}
+        >
+          <summary style={{
+            padding: '0.875rem 1rem',
+            background: darkMode ? '#1e293b' : '#f8fafc',
             cursor: 'pointer',
             fontSize: '0.875rem',
-            fontWeight: 500,
+            fontWeight: 600,
             color: darkMode ? '#f1f5f9' : '#0f172a',
+            userSelect: 'none',
           }}>
-            🔍 View HTML Output
+            🔍 View HTML Output ({content.length} characters)
           </summary>
-          <pre style={{
-            marginTop: '0.5rem',
-            padding: '1rem',
-            background: darkMode ? '#0f172a' : '#f8fafc',
-            border: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
-            borderRadius: '0.375rem',
-            fontSize: '0.75rem',
-            color: darkMode ? '#94a3b8' : '#64748b',
-            overflow: 'auto',
-            maxHeight: '300px',
+          <div style={{
+            background: darkMode ? '#0f172a' : '#ffffff',
+            borderTop: `1px solid ${darkMode ? '#334155' : '#e2e8f0'}`,
           }}>
-            {content}
-          </pre>
+            <pre style={{
+              margin: 0,
+              padding: '1rem',
+              fontSize: '0.75rem',
+              fontFamily: 'ui-monospace, monospace',
+              color: darkMode ? '#94a3b8' : '#64748b',
+              overflow: 'auto',
+              maxHeight: '400px',
+              lineHeight: '1.5',
+            }}>
+              {content}
+            </pre>
+          </div>
         </details>
       </div>
     </div>

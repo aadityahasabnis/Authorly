@@ -37,17 +37,32 @@ describe('sanitizeHtml', () => {
 });
 
 describe('exports', () => {
-  it('should export ContentBlocksEditor', async () => {
+  it('should export AuthorlyEditor', async () => {
+    const exports = await import('../index');
+    expect(exports.AuthorlyEditor).toBeDefined();
+  });
+
+  it('should export ContentBlocksEditor (deprecated)', async () => {
     const exports = await import('../index');
     expect(exports.ContentBlocksEditor).toBeDefined();
   });
 
-  it('should export ContentBlocksRenderer', async () => {
+  it('should export AuthorlyRenderer', async () => {
+    const exports = await import('../index');
+    expect(exports.AuthorlyRenderer).toBeDefined();
+  });
+
+  it('should export ContentBlocksRenderer (deprecated)', async () => {
     const exports = await import('../index');
     expect(exports.ContentBlocksRenderer).toBeDefined();
   });
 
-  it('should export TableOfContents', async () => {
+  it('should export AuthorlyTOC', async () => {
+    const exports = await import('../index');
+    expect(exports.AuthorlyTOC).toBeDefined();
+  });
+
+  it('should export TableOfContents (deprecated)', async () => {
     const exports = await import('../index');
     expect(exports.TableOfContents).toBeDefined();
   });

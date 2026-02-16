@@ -598,6 +598,13 @@ const uploadConfig = createCloudinaryConfig({
 See the [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-uploads) for Cloudinary, S3, and custom upload examples.
 </details>
 
+<details>
+<summary><strong>Why do CSS classes still use `cb-` prefix?</strong></summary>
+
+For backward compatibility, CSS classes retain the `cb-` prefix (e.g., `cb-editor`, `cb-toolbar`). This prevents breaking changes for existing users. Component names have been updated to `AuthorlyEditor`, `AuthorlyRenderer`, etc. for better branding and consistency. The old component names (`ContentBlocksEditor`, `ContentBlocksRenderer`) are still available but deprecated.
+
+</details>
+
 ---
 
 ## Contributing
