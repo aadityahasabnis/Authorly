@@ -1,10 +1,10 @@
 {
-  "name": "authorly-editor",
+  "name": "@aadityahasabnis/authorly",
   "version": "0.1.12",
   "description": "A rich text editor for authors, blogs, and documentation with clean, publish-ready output.",
   "publishConfig": {
     "access": "public",
-    "registry": "https://registry.npmjs.org"
+    "registry": "https://npm.pkg.github.com"
   },
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
