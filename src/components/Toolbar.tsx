@@ -2,7 +2,7 @@
  * Toolbar Component - Professional with floating popovers
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, JSX } from 'react';
 import { createPortal } from 'react-dom';
 import type { ToolbarProps, BlockType } from '../core/types';
 import {
@@ -93,21 +93,21 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     underline: false,
     strikethrough: false,
   });
-  
+
   // Link preview state
   const [linkPreview, setLinkPreview] = useState<{
     url: string;
     element: HTMLAnchorElement;
     position: { x: number; y: number };
   } | null>(null);
-  
+
   // Date calendar picker state
   const [dateCalendar, setDateCalendar] = useState<{
     date: Date;
     element: HTMLElement;
     position: { x: number; y: number };
   } | null>(null);
-  
+
   // Time picker state
   const [timePickerState, setTimePickerState] = useState({
     hour: 12,
@@ -115,13 +115,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     period: 'AM' as 'AM' | 'PM',
     timezone: 'IST',
   });
-  
+
   // Time picker hover state (for editing existing time)
   const [timePicker, setTimePicker] = useState<{
     element: HTMLElement;
     position: { x: number; y: number };
   } | null>(null);
-  
+
   const toolbarRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const linkPreviewRef = useRef<HTMLDivElement>(null);
@@ -141,11 +141,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       // Only update if selection is within the editor
       const selection = window.getSelection();
       if (!selection || !selection.rangeCount) return;
-      
+
       const range = selection.getRangeAt(0);
       const container = editor?.container;
       if (!container || !container.contains(range.commonAncestorContainer)) return;
-      
+
       setFormatState({
         bold: document.queryCommandState('bold'),
         italic: document.queryCommandState('italic'),
@@ -206,9 +206,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
-          !toolbarRef.current?.contains(e.target as Node)) {
+        !toolbarRef.current?.contains(e.target as Node)) {
         setActivePopover(null);
-        
+
         // Restore selection when clicking outside
         setTimeout(() => {
           if (savedRangeRef.current && editor?.container) {
@@ -217,17 +217,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               if (selection) {
                 selection.removeAllRanges();
                 selection.addRange(savedRangeRef.current);
-                
+
                 // Focus the contenteditable element
                 const editableElement = savedRangeRef.current.commonAncestorContainer;
                 let focusTarget: HTMLElement | null = null;
-                
+
                 if (editableElement.nodeType === Node.ELEMENT_NODE) {
                   focusTarget = editableElement as HTMLElement;
                 } else {
                   focusTarget = editableElement.parentElement;
                 }
-                
+
                 while (focusTarget && focusTarget !== editor.container) {
                   if (focusTarget.getAttribute('contenteditable') === 'true') {
                     focusTarget.focus();
@@ -244,12 +244,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           }
         }, 0);
       }
-      
+
       // Close link preview when clicking outside
       if (linkPreviewRef.current && !linkPreviewRef.current.contains(e.target as Node)) {
         setLinkPreview(null);
       }
-      
+
       // Close date calendar when clicking outside
       if (dateCalendarRef.current && !dateCalendarRef.current.contains(e.target as Node)) {
         setDateCalendar(null);
@@ -266,13 +266,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
     const handleMouseOver = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      
+
       // Clear close timeout if hovering back
       if (linkCloseTimeoutRef.current) {
         window.clearTimeout(linkCloseTimeoutRef.current);
         linkCloseTimeoutRef.current = null;
       }
-      
+
       // Check if hovering over a link
       const link = target.closest('a.cb-link') as HTMLAnchorElement;
       if (link && link.href) {
@@ -280,11 +280,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         if (linkHoverTimeoutRef.current) {
           window.clearTimeout(linkHoverTimeoutRef.current);
         }
-        
+
         // Show preview after short delay
         linkHoverTimeoutRef.current = window.setTimeout(() => {
           const rect = link.getBoundingClientRect();
-          
+
           setLinkPreview({
             url: link.href,
             element: link,
@@ -300,16 +300,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     const handleMouseOut = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const relatedTarget = e.relatedTarget as HTMLElement;
-      
+
       const link = target.closest('a.cb-link');
-      
+
       if (link) {
         // Clear the open timeout if mouse leaves before preview shows
         if (linkHoverTimeoutRef.current) {
           window.clearTimeout(linkHoverTimeoutRef.current);
           linkHoverTimeoutRef.current = null;
         }
-        
+
         // Don't close if moving to the preview card
         const movingToPreview = relatedTarget?.closest?.('.cb-link-preview');
         if (!movingToPreview) {
@@ -353,13 +353,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
     const handleMouseOver = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      
+
       // Clear close timeout if hovering back
       if (dateCloseTimeoutRef.current) {
         window.clearTimeout(dateCloseTimeoutRef.current);
         dateCloseTimeoutRef.current = null;
       }
-      
+
       // Check if hovering over a date element
       const dateEl = target.closest('.cb-date-inline') as HTMLElement;
       if (dateEl) {
@@ -367,13 +367,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         if (dateHoverTimeoutRef.current) {
           window.clearTimeout(dateHoverTimeoutRef.current);
         }
-        
+
         // Show calendar after short delay
         dateHoverTimeoutRef.current = window.setTimeout(() => {
           const rect = dateEl.getBoundingClientRect();
           const dateStr = dateEl.getAttribute('data-date') || new Date().toISOString();
           const date = new Date(dateStr);
-          
+
           setDateCalendar({
             date,
             element: dateEl,
@@ -384,7 +384,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           });
         }, 300); // 300ms delay
       }
-      
+
       // Check if hovering over a time element
       const timeEl = target.closest('.cb-time-inline') as HTMLElement;
       if (timeEl) {
@@ -392,7 +392,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         if (timeHoverTimeoutRef.current) {
           window.clearTimeout(timeHoverTimeoutRef.current);
         }
-        
+
         // Show time picker after short delay
         timeHoverTimeoutRef.current = window.setTimeout(() => {
           const rect = timeEl.getBoundingClientRect();
@@ -400,7 +400,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           const minute = parseInt(timeEl.getAttribute('data-minute') || '0', 10);
           const period = (timeEl.getAttribute('data-period') || 'AM') as 'AM' | 'PM';
           const timezone = timeEl.getAttribute('data-timezone') || 'IST';
-          
+
           setTimePickerState({ hour, minute, period, timezone });
           setTimePicker({
             element: timeEl,
@@ -416,16 +416,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     const handleMouseOut = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       const relatedTarget = e.relatedTarget as HTMLElement;
-      
+
       const dateEl = target.closest('.cb-date-inline');
-      
+
       if (dateEl) {
         // Clear the open timeout if mouse leaves before calendar shows
         if (dateHoverTimeoutRef.current) {
           window.clearTimeout(dateHoverTimeoutRef.current);
           dateHoverTimeoutRef.current = null;
         }
-        
+
         // Don't close if moving to the calendar
         const movingToCalendar = relatedTarget?.closest?.('.cb-date-calendar');
         if (!movingToCalendar) {
@@ -435,16 +435,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           }, 200);
         }
       }
-      
+
       const timeEl = target.closest('.cb-time-inline');
-      
+
       if (timeEl) {
         // Clear the open timeout if mouse leaves before picker shows
         if (timeHoverTimeoutRef.current) {
           window.clearTimeout(timeHoverTimeoutRef.current);
           timeHoverTimeoutRef.current = null;
         }
-        
+
         // Don't close if moving to the time picker
         const movingToPicker = relatedTarget?.closest?.('.cb-time-picker-hover');
         if (!movingToPicker) {
@@ -504,7 +504,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         timeHoverTimeoutRef,
         timeCloseTimeoutRef,
       ];
-      
+
       timeoutRefs.forEach(ref => {
         if (ref.current !== null) {
           window.clearTimeout(ref.current);
@@ -520,14 +520,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       setActivePopover(null);
       return;
     }
-    
+
     // Note: Selection is saved in toolbar button's onMouseDown handler
     // to capture it before the editor loses focus
-    
+
     const button = e.currentTarget as HTMLElement;
     const rect = button.getBoundingClientRect();
     const toolbarRect = toolbarRef.current?.getBoundingClientRect();
-    
+
     setPopoverPosition({
       x: rect.left - (toolbarRect?.left || 0),
       y: rect.bottom - (toolbarRect?.top || 0) + 8,
@@ -539,7 +539,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   // Close popover and restore selection
   const handleClosePopover = useCallback(() => {
     setActivePopover(null);
-    
+
     // Restore the saved selection after popover closes
     setTimeout(() => {
       if (savedRangeRef.current && editor?.container) {
@@ -548,17 +548,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           if (selection) {
             selection.removeAllRanges();
             selection.addRange(savedRangeRef.current);
-            
+
             // Focus the editor to ensure selection is visible
             const editableElement = savedRangeRef.current.commonAncestorContainer;
             let focusTarget: HTMLElement | null = null;
-            
+
             if (editableElement.nodeType === Node.ELEMENT_NODE) {
               focusTarget = editableElement as HTMLElement;
             } else {
               focusTarget = editableElement.parentElement;
             }
-            
+
             // Find the contenteditable element
             while (focusTarget && focusTarget !== editor.container) {
               if (focusTarget.getAttribute('contenteditable') === 'true') {
@@ -588,7 +588,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           selection.addRange(savedRangeRef.current);
         }
       }
-      
+
       insertLink(editor.container, linkUrl);
       setActivePopover(null);
       setLinkUrl('');
@@ -607,7 +607,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           selection.addRange(savedRangeRef.current);
         }
       }
-      
+
       setTextColor(editor.container, color);
       setActivePopover(null);
       savedRangeRef.current = null;
@@ -625,7 +625,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           selection.addRange(savedRangeRef.current);
         }
       }
-      
+
       if (color === 'transparent') {
         document.execCommand('removeFormat', false);
       } else {
@@ -641,7 +641,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     if (linkPreview) {
       const url = linkPreview.url;
       setLinkUrl(url);
-      
+
       // Select the link element
       const selection = window.getSelection();
       if (selection) {
@@ -651,10 +651,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         selection.addRange(range);
         savedRangeRef.current = range.cloneRange();
       }
-      
+
       setLinkPreview(null);
       setActivePopover('link');
-      
+
       // Position the popup near the link
       const rect = linkPreview.element.getBoundingClientRect();
       const toolbarRect = toolbarRef.current?.getBoundingClientRect();
@@ -683,7 +683,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         selection.removeAllRanges();
         selection.addRange(range);
       }
-      
+
       removeLink(editor.container);
       setLinkPreview(null);
     }
@@ -692,7 +692,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   // Handle export
   const handleExport = useCallback((format: 'html' | 'json') => {
     if (!editor) return;
-    
+
     const html = editor.getHTML();
     let content: string;
     let filename: string;
@@ -739,9 +739,9 @@ ${html}
   // Handle PDF export
   const handleExportPDF = useCallback(() => {
     if (!editor) return;
-    
+
     const html = editor.getHTML();
-    
+
     // Create a temporary iframe for PDF generation
     const iframe = document.createElement('iframe');
     iframe.style.position = 'absolute';
@@ -749,13 +749,13 @@ ${html}
     iframe.style.height = '0';
     iframe.style.border = 'none';
     document.body.appendChild(iframe);
-    
+
     const iframeDoc = iframe.contentWindow?.document;
     if (!iframeDoc) {
       document.body.removeChild(iframe);
       return;
     }
-    
+
     // Write styled content to iframe
     iframeDoc.open();
     iframeDoc.write(`
@@ -859,12 +859,12 @@ ${html}
       </html>
     `);
     iframeDoc.close();
-    
+
     // Wait for content to load, then print
     iframe.contentWindow?.focus();
     setTimeout(() => {
       iframe.contentWindow?.print();
-      
+
       // Remove iframe after a delay
       setTimeout(() => {
         document.body.removeChild(iframe);
@@ -875,7 +875,7 @@ ${html}
   // Handle date insertion
   const handleInsertDate = useCallback((date: Date) => {
     if (!editor?.container) return;
-    
+
     // Restore the saved selection before inserting date
     let range: Range;
     if (savedRangeRef.current) {
@@ -890,10 +890,10 @@ ${html}
       if (!selection || !selection.rangeCount) return;
       range = selection.getRangeAt(0);
     }
-    
+
     const selection = window.getSelection();
     if (!selection) return;
-    
+
     // Import date block functions
     const formatDate = (date: Date): string => {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -901,32 +901,32 @@ ${html}
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
       ];
-      
+
       const dayName = days[date.getDay()];
       const day = date.getDate();
       const monthName = months[date.getMonth()];
       const year = date.getFullYear();
-      
+
       return `${dayName}, ${day} ${monthName} ${year}`;
     };
-    
+
     // Create date span element
     const dateSpan = document.createElement('span');
     dateSpan.className = 'cb-date-inline';
     dateSpan.setAttribute('data-date', date.toISOString());
     dateSpan.setAttribute('contenteditable', 'false');
     dateSpan.textContent = formatDate(date);
-    
+
     // Insert at cursor
     range.deleteContents();
     range.insertNode(dateSpan);
-    
+
     // Move cursor after the date
     range.setStartAfter(dateSpan);
     range.setEndAfter(dateSpan);
     selection.removeAllRanges();
     selection.addRange(range);
-    
+
     setActivePopover(null);
     savedRangeRef.current = null;
   }, [editor]);
@@ -934,7 +934,7 @@ ${html}
   // Handle time insertion
   const handleInsertTime = useCallback((hour: number, minute: number, period: 'AM' | 'PM', timezone: string) => {
     if (!editor?.container) return;
-    
+
     // Restore the saved selection before inserting time
     let range: Range;
     if (savedRangeRef.current) {
@@ -949,13 +949,13 @@ ${html}
       if (!selection || !selection.rangeCount) return;
       range = selection.getRangeAt(0);
     }
-    
+
     const selection = window.getSelection();
     if (!selection) return;
-    
+
     // Format time as HH:MM AM/PM TZ
     const timeString = `${hour}:${minute.toString().padStart(2, '0')} ${period} ${timezone}`;
-    
+
     // Create time span element
     const timeSpan = document.createElement('span');
     timeSpan.className = 'cb-time-inline';
@@ -966,17 +966,17 @@ ${html}
     timeSpan.setAttribute('data-timezone', timezone);
     timeSpan.setAttribute('contenteditable', 'false');
     timeSpan.textContent = timeString;
-    
+
     // Insert at cursor
     range.deleteContents();
     range.insertNode(timeSpan);
-    
+
     // Move cursor after the time
     range.setStartAfter(timeSpan);
     range.setEndAfter(timeSpan);
     selection.removeAllRanges();
     selection.addRange(range);
-    
+
     setActivePopover(null);
     savedRangeRef.current = null;
   }, [editor]);
@@ -984,7 +984,7 @@ ${html}
   // Handle text case transformation
   const handleTextCase = useCallback((caseType: 'lowercase' | 'uppercase' | 'capitalize') => {
     if (!editor?.container) return;
-    
+
     // Restore the saved selection before transforming
     if (savedRangeRef.current) {
       const sel = window.getSelection();
@@ -993,22 +993,22 @@ ${html}
         sel.addRange(savedRangeRef.current);
       }
     }
-    
+
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount) return;
-    
+
     const range = selection.getRangeAt(0);
     if (range.collapsed) return; // No text selected
-    
+
     // Get selected text
     const selectedText = range.toString();
     if (!selectedText) return;
-    
+
     // Check if already transformed
     const container = range.commonAncestorContainer;
     const parent = container.nodeType === Node.TEXT_NODE ? container.parentElement : container as HTMLElement;
     const currentCase = parent?.getAttribute('data-text-case');
-    
+
     // If clicking the same transformation, revert to original
     if (currentCase === caseType) {
       const originalText = parent?.getAttribute('data-original-text');
@@ -1023,7 +1023,7 @@ ${html}
         return;
       }
     }
-    
+
     // Transform text
     let transformedText = selectedText;
     switch (caseType) {
@@ -1040,23 +1040,23 @@ ${html}
           .join(' ');
         break;
     }
-    
+
     // Save original text for toggle behavior
     if (!currentCase) {
       parent?.setAttribute('data-original-text', selectedText);
     }
     parent?.setAttribute('data-text-case', caseType);
-    
+
     // Replace text
     const textNode = document.createTextNode(transformedText);
     range.deleteContents();
     range.insertNode(textNode);
-    
+
     // Restore selection
     range.selectNodeContents(textNode);
     selection.removeAllRanges();
     selection.addRange(range);
-    
+
     setActivePopover(null);
     savedRangeRef.current = null;
   }, [editor]);
@@ -1064,35 +1064,35 @@ ${html}
   // Handle date update from calendar
   const handleUpdateDate = useCallback((newDate: Date) => {
     if (!dateCalendar) return;
-    
+
     const formatDate = (date: Date): string => {
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const months = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
       ];
-      
+
       const dayName = days[date.getDay()];
       const day = date.getDate();
       const monthName = months[date.getMonth()];
       const year = date.getFullYear();
-      
+
       return `${dayName}, ${day} ${monthName} ${year}`;
     };
-    
+
     const element = dateCalendar.element;
     element.setAttribute('data-date', newDate.toISOString());
     element.textContent = formatDate(newDate);
-    
+
     setDateCalendar(null);
   }, [dateCalendar]);
 
   // Update time on hover picker
   const handleUpdateTime = useCallback((hour: number, minute: number, period: 'AM' | 'PM', timezone: string) => {
     if (!timePicker) return;
-    
+
     const timeString = `${hour}:${minute.toString().padStart(2, '0')} ${period} ${timezone}`;
-    
+
     const element = timePicker.element;
     element.setAttribute('data-time', timeString);
     element.setAttribute('data-hour', hour.toString());
@@ -1100,7 +1100,7 @@ ${html}
     element.setAttribute('data-period', period);
     element.setAttribute('data-timezone', timezone);
     element.textContent = timeString;
-    
+
     setTimePicker(null);
   }, [timePicker]);
 
@@ -1114,7 +1114,7 @@ ${html}
     const blockId = block?.getAttribute('data-block-id');
     const currentType = block?.getAttribute('data-block-type');
     const editable = block?.querySelector('[contenteditable="true"]');
-    
+
     if (blockId && currentType === 'paragraph' && editable && !editable.textContent?.trim()) {
       editor.transformBlock(block as HTMLElement, type, data);
     } else {
@@ -1295,7 +1295,7 @@ ${html}
       aria-label="Editor formatting options"
       onMouseDown={(e) => {
         const target = e.target as HTMLElement;
-        
+
         // Save selection BEFORE anything else happens
         // This captures the cursor position before the editor loses focus
         const selection = window.getSelection();
@@ -1306,7 +1306,7 @@ ${html}
             savedRangeRef.current = range.cloneRange();
           }
         }
-        
+
         // Allow clicks on input and select elements to work normally
         if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
           return;
@@ -1352,8 +1352,8 @@ ${html}
             <div className="cb-popover-content cb-link-popover">
               <div className="cb-popover-header">
                 <span>Insert Link</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={() => setActivePopover(null)}
                 >
@@ -1390,8 +1390,8 @@ ${html}
             <div className="cb-popover-content cb-color-popover">
               <div className="cb-popover-header">
                 <span>Highlight Color</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={() => setActivePopover(null)}
                 >
@@ -1404,7 +1404,7 @@ ${html}
                     key={color}
                     type="button"
                     className="cb-color-swatch"
-                    style={{ 
+                    style={{
                       backgroundColor: color === 'transparent' ? '#fff' : color,
                       border: color === 'transparent' ? '2px dashed #ccc' : undefined,
                     }}
@@ -1423,8 +1423,8 @@ ${html}
             <div className="cb-popover-content cb-color-popover">
               <div className="cb-popover-header">
                 <span>Text Color</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={() => setActivePopover(null)}
                 >
@@ -1451,8 +1451,8 @@ ${html}
             <div className="cb-popover-content cb-date-popover">
               <div className="cb-popover-header">
                 <span>Insert Date</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={handleClosePopover}
                 >
@@ -1506,8 +1506,8 @@ ${html}
             <div className="cb-popover-content cb-time-popover">
               <div className="cb-popover-header">
                 <span>Set Time</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={handleClosePopover}
                 >
@@ -1572,9 +1572,9 @@ ${html}
                         </button>
                       </div>
                     </div>
-                    
+
                     <span className="cb-time-colon-compact">:</span>
-                    
+
                     {/* Minute Input */}
                     <div className="cb-time-input-box-compact">
                       <input
@@ -1629,7 +1629,7 @@ ${html}
                         </button>
                       </div>
                     </div>
-                    
+
                     {/* AM/PM Toggle */}
                     <button
                       type="button"
@@ -1643,7 +1643,7 @@ ${html}
                     >
                       {timePickerState.period}
                     </button>
-                    
+
                     {/* Now Button - Icon Only */}
                     <button
                       type="button"
@@ -1661,7 +1661,7 @@ ${html}
                       <Circle size={6} fill="currentColor" className="cb-pulse-dot" />
                     </button>
                   </div>
-                  
+
                   {/* Timezone and Insert Button Row */}
                   <div className="cb-time-bottom-row">
                     <select
@@ -1680,7 +1680,7 @@ ${html}
                       <option value="CST">🇺🇸 CST - Central</option>
                       <option value="JST">🇯🇵 JST - Japan</option>
                     </select>
-                    
+
                     <button
                       type="button"
                       className="cb-time-insert-icon-compact"
@@ -1707,8 +1707,8 @@ ${html}
             <div className="cb-popover-content cb-case-popover">
               <div className="cb-popover-header">
                 <span>Text Case & Strikethrough</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={handleClosePopover}
                 >
@@ -1764,8 +1764,8 @@ ${html}
             <div className="cb-popover-content cb-alignment-popover">
               <div className="cb-popover-header">
                 <span>Text Alignment</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={handleClosePopover}
                 >
@@ -1829,8 +1829,8 @@ ${html}
             <div className="cb-popover-content cb-insert-popover">
               <div className="cb-popover-header">
                 <span>Insert</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="cb-popover-close"
                   onClick={handleClosePopover}
                 >
@@ -1980,9 +1980,9 @@ ${html}
           }}
         >
           <div className="cb-link-preview-content">
-            <a 
-              href={linkPreview.url} 
-              target="_blank" 
+            <a
+              href={linkPreview.url}
+              target="_blank"
               rel="noopener noreferrer"
               className="cb-link-preview-url"
               title={linkPreview.url}
@@ -2081,14 +2081,14 @@ ${html}
                 ›
               </button>
             </div>
-            
+
             <div className="cb-calendar-grid">
               <div className="cb-calendar-weekdays">
                 {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
                   <div key={i} className="cb-calendar-weekday">{day}</div>
                 ))}
               </div>
-              
+
               <div className="cb-calendar-days">
                 {(() => {
                   const year = dateCalendar.date.getFullYear();
@@ -2099,21 +2099,21 @@ ${html}
                   const daysInMonth = lastDay.getDate();
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
-                  
+
                   const days: JSX.Element[] = [];
-                  
+
                   // Empty cells for days before the first day of the month
                   for (let i = 0; i < startingDayOfWeek; i++) {
                     days.push(<div key={`empty-${i}`} className="cb-calendar-day-empty"></div>);
                   }
-                  
+
                   // Days of the month
                   for (let day = 1; day <= daysInMonth; day++) {
                     const date = new Date(year, month, day);
                     date.setHours(0, 0, 0, 0);
                     const isToday = date.getTime() === today.getTime();
                     const isSelected = date.getTime() === new Date(dateCalendar.date).setHours(0, 0, 0, 0);
-                    
+
                     days.push(
                       <button
                         key={day}
@@ -2125,7 +2125,7 @@ ${html}
                       </button>
                     );
                   }
-                  
+
                   return days;
                 })()}
               </div>
@@ -2134,7 +2134,7 @@ ${html}
         </div>,
         document.body
       )}
-      
+
       {/* Time Picker on Hover - rendered in portal for proper positioning */}
       {timePicker && typeof document !== 'undefined' && createPortal(
         <div
@@ -2160,7 +2160,7 @@ ${html}
         >
           <div className="cb-time-picker-hover-content">
             <div className="cb-time-hover-header">Edit Time</div>
-            
+
             {/* Time Display - Compact with Now button */}
             <div className="cb-time-input-group-compact">
               {/* Hour */}
@@ -2217,9 +2217,9 @@ ${html}
                   </button>
                 </div>
               </div>
-              
+
               <span className="cb-time-colon-compact">:</span>
-              
+
               {/* Minute */}
               <div className="cb-time-input-box-compact">
                 <input
@@ -2274,7 +2274,7 @@ ${html}
                   </button>
                 </div>
               </div>
-              
+
               {/* AM/PM */}
               <button
                 type="button"
@@ -2288,7 +2288,7 @@ ${html}
               >
                 {timePickerState.period}
               </button>
-              
+
               {/* Now Button - Icon Only */}
               <button
                 type="button"
@@ -2306,7 +2306,7 @@ ${html}
                 <Circle size={6} fill="currentColor" className="cb-pulse-dot" />
               </button>
             </div>
-            
+
             {/* Timezone and Update Button Row */}
             <div className="cb-time-bottom-row">
               <select
@@ -2325,7 +2325,7 @@ ${html}
                 <option value="CST">🇺🇸 CST - Central</option>
                 <option value="JST">🇯🇵 JST - Japan</option>
               </select>
-              
+
               <button
                 type="button"
                 className="cb-time-insert-icon-compact"
