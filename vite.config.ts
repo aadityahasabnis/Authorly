@@ -35,7 +35,8 @@ export default defineConfig(({ mode }) => {
               'react-dom': 'ReactDOM',
             },
             assetFileNames: (assetInfo) => {
-              if (assetInfo.name === 'style.css') return 'authorly.css';
+              // Always name the CSS file 'authorly.css' regardless of package name
+              if (assetInfo.name?.endsWith('.css')) return 'authorly.css';
               return assetInfo.name || '';
             },
           },
