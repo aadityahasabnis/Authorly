@@ -32,8 +32,8 @@
 | Feature | Authorly | Other Editors |
 |---------|----------|---------------|
 | **Output** | Pure semantic HTML | JSON AST / Custom format |
-| **Dependencies** | React + Lucide icons | Heavy frameworks |
-| **Bundle size** | 256KB gzipped | 600KB+ |
+| **Dependencies** | React + Lucide + optional Excalidraw | Heavy frameworks |
+| **Bundle size** | ~67KB JS + 115KB CSS gzipped | 600KB+ |
 | **Learning curve** | Minutes | Hours/Days |
 | **Database storage** | Just HTML string | Complex serialization |
 
@@ -58,12 +58,12 @@
 - **Professional Undo/Redo** - Reliable history management with cursor restoration
 - **Dark Mode** - Beautiful dark theme out of the box
 - **TypeScript Ready** - Full type definitions included
-- **Lightweight** - Only 256KB gzipped (ESM + CSS)
+- **Lightweight** - ~67KB JS gzipped (ESM)
 - **Keyboard Shortcuts** - Efficient editing with familiar shortcuts
 - **Table of Contents** - Auto-generate navigation from headings
 - **Accessibility** - WCAG compliant with ARIA labels
 - **Security Hardened** - XSS protection and input validation
-- **Zero Runtime Dependencies** - Only React as peer dependency
+- **Minimal Dependencies** - Peer dependencies: React, Lucide React icons, and optionally Excalidraw
 
 ---
 
@@ -411,7 +411,7 @@ function Editor() {
 }
 ```
 
-See [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-uploads) for more examples including S3 and custom backends.
+See the [GitHub repository](https://github.com/aadityahasabnis/Authorly) for more examples including S3 and custom upload examples.
 
 ### Dark Mode Support
 
@@ -595,7 +595,7 @@ const uploadConfig = createCloudinaryConfig({
 <AuthorlyEditor imageUploadConfig={uploadConfig} />
 ```
 
-See the [Image Upload Guide](https://authorly-editor.vercel.app/docs/guides/image-uploads) for Cloudinary, S3, and custom upload examples.
+See the [GitHub repository](https://github.com/aadityahasabnis/Authorly) for Cloudinary, S3, and custom upload examples.
 </details>
 
 <details>
@@ -613,7 +613,7 @@ Contributions are welcome! Please read our contributing guidelines first.
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/authorly.git
+git clone https://github.com/aadityahasabnis/Authorly.git
 
 # Install dependencies
 npm install

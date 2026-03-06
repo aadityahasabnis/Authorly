@@ -22,7 +22,7 @@ import type {
 } from '../core/types';
 import { blockRegistry } from '../core/block-registry';
 import { allBlocks } from '../blocks';
-import { sanitizePaste } from '../paste/sanitize';
+import { sanitizePaste, convertPlainTextToHtml } from '../paste/sanitize';
 import { initDragDrop } from '../drag/drag-handle';
 import {
   isCursorAtStart,
@@ -529,12 +529,29 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       case 'checkList': {
         const items: Array<{id: string; content: string; checked?: boolean}> = [];
         element.querySelectorAll(':scope > li').forEach(li => {
+          // Clone so we can mutate without affecting the DOM
+          const liClone = li.cloneNode(true) as HTMLElement;
+
+          // Remove nested sublists — they aren't supported as inline content
+          liClone.querySelectorAll('ul, ol').forEach(sub => sub.remove());
+
+          // Unwrap single <p> wrapper that some sources (Google Docs) put inside <li>
+          const children = Array.from(liClone.childNodes);
+          const pWrapped = children.length === 1 && (children[0] as HTMLElement).tagName === 'P';
+          const content = pWrapped
+            ? (children[0] as HTMLElement).innerHTML.trim()
+            : liClone.innerHTML.trim();
+
           items.push({
-            id: generateId(), // Fresh ID for each list item
-            content: li.innerHTML,
+            id: generateId(),
+            content,
             checked: li.querySelector('input[type="checkbox"]')?.hasAttribute('checked'),
           });
         });
+        // Only create the block if there are actual items
+        if (items.length === 0) {
+          items.push({ id: generateId(), content: '' });
+        }
         data.items = items;
         break;
       }
@@ -567,16 +584,31 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         data.open = (element as HTMLDetailsElement).open;
         break;
       case 'table': {
-        // Parse table structure
+        // Parse table structure — works with or without <thead>/<tbody> wrappers
         const rows: Array<{cells: Array<{content: string}>}> = [];
-        element.querySelectorAll('tr').forEach(tr => {
+        let hasHeader = false;
+        element.querySelectorAll('tr').forEach((tr, rowIndex) => {
           const cells: Array<{content: string}> = [];
           tr.querySelectorAll('th, td').forEach(cell => {
-            cells.push({ content: cell.innerHTML });
+            if (cell.tagName === 'TH') hasHeader = true;
+            // Unwrap single <p> wrapper that external sources put inside cells
+            const cellChildren = Array.from(cell.childNodes);
+            const pWrapped = cellChildren.length === 1 && (cellChildren[0] as HTMLElement).tagName === 'P';
+            const content = pWrapped
+              ? (cellChildren[0] as HTMLElement).innerHTML.trim()
+              : cell.innerHTML.trim();
+            cells.push({ content });
           });
-          rows.push({ cells });
+          if (cells.length > 0) rows.push({ cells });
+          void rowIndex; // suppress unused var warning
         });
+        if (rows.length === 0) {
+          // Fallback: empty 2x2 table
+          rows.push({ cells: [{ content: '' }, { content: '' }] });
+          rows.push({ cells: [{ content: '' }, { content: '' }] });
+        }
         data.rows = rows;
+        data.hasHeader = hasHeader;
         break;
       }
       case 'linkPreview':
@@ -641,7 +673,20 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
 
       if (stripEditorUI) {
         // Remove all editor UI controls
-        clone.querySelectorAll('.cb-code-toolbar, .cb-image-controls, .cb-table-controls, .cb-callout-type-selector').forEach(el => el.remove());
+        clone.querySelectorAll('.cb-code-toolbar, .cb-image-controls, .cb-table-controls').forEach(el => el.remove());
+        
+        // For callout icons: keep the icon but remove the interactive dropdown
+        clone.querySelectorAll('.cb-callout-icon-container').forEach(container => {
+          const dropdown = container.querySelector('.cb-callout-type-selector');
+          if (dropdown) dropdown.remove();
+          
+          const icon = container.querySelector('.cb-callout-icon');
+          if (icon) {
+            icon.removeAttribute('role');
+            icon.removeAttribute('tabindex');
+            icon.removeAttribute('title');
+          }
+        });
         
         // Remove image editor UI elements (uploading state, alt text input, resize handles)
         clone.querySelectorAll('.cb-image-uploading, .cb-image-error, .cb-image-alt-editor').forEach(el => el.remove());
@@ -872,7 +917,20 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         const clone = blockElement.cloneNode(true) as HTMLElement;
 
         // Remove ALL editor UI elements
-        clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
+        clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, svg, button').forEach(el => el.remove());
+        
+        // For callout icons: keep the icon but remove the interactive dropdown
+        clone.querySelectorAll('.cb-callout-icon-container').forEach(container => {
+          const dropdown = container.querySelector('.cb-callout-type-selector');
+          if (dropdown) dropdown.remove();
+          
+          const icon = container.querySelector('.cb-callout-icon');
+          if (icon) {
+            icon.removeAttribute('role');
+            icon.removeAttribute('tabindex');
+            icon.removeAttribute('title');
+          }
+        });
 
         // Remove editor-specific attributes
         clone.removeAttribute('data-placeholder');
@@ -944,7 +1002,20 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       const clone = tempDiv.cloneNode(true) as HTMLElement;
 
       // Remove ALL editor-specific elements
-      clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
+      clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, svg, button').forEach(el => el.remove());
+      
+      // For callout icons: keep the icon but remove the interactive dropdown
+      clone.querySelectorAll('.cb-callout-icon-container').forEach(container => {
+        const dropdown = container.querySelector('.cb-callout-type-selector');
+        if (dropdown) dropdown.remove();
+        
+        const icon = container.querySelector('.cb-callout-icon');
+        if (icon) {
+          icon.removeAttribute('role');
+          icon.removeAttribute('tabindex');
+          icon.removeAttribute('title');
+        }
+      });
 
       // Remove editor-specific attributes
       clone.querySelectorAll('[data-placeholder]').forEach(el => el.removeAttribute('data-placeholder'));
@@ -971,7 +1042,20 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       const clone = blockElement.cloneNode(true) as HTMLElement;
 
       // Remove ALL editor-specific elements
-      clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, .cb-callout-type-selector, svg, button').forEach(el => el.remove());
+      clone.querySelectorAll('.cb-block-controls, .cb-block-actions, .cb-block-btn, .cb-block-add, .cb-block-drag, .cb-block-delete, .cb-image-controls, .cb-image-align, .cb-image-crop, .cb-image-resize-handle, .cb-crop-handle, .cb-crop-overlay, .cb-crop-toolbar, .cb-table-controls, .cb-code-toolbar, svg, button').forEach(el => el.remove());
+      
+      // For callout icons: keep the icon but remove the interactive dropdown
+      clone.querySelectorAll('.cb-callout-icon-container').forEach(container => {
+        const dropdown = container.querySelector('.cb-callout-type-selector');
+        if (dropdown) dropdown.remove();
+        
+        const icon = container.querySelector('.cb-callout-icon');
+        if (icon) {
+          icon.removeAttribute('role');
+          icon.removeAttribute('tabindex');
+          icon.removeAttribute('title');
+        }
+      });
 
       // Remove editor-specific attributes
       clone.removeAttribute('data-placeholder');
@@ -1930,8 +2014,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
     const handleClickMain = (e: Event) => {
       const target = e.target as HTMLElement;
 
-      // Don't interfere with input/textarea interactions
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+      // Don't interfere with input/textarea/select interactions
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
         return;
       }
 
@@ -2135,35 +2219,69 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       }
     };
 
-    // Handle paste in image/video URL inputs
+    // Capture-phase paste guard: block browser's native paste into contenteditable elements
+    // so only our React onPaste handler runs. Native input/textarea fields are exempt
+    // because they don't fire the React onPaste handler.
     const handleInputPaste = (e: Event) => {
       const target = e.target as HTMLElement;
-      const pasteEvent = e as ClipboardEvent;
+      const tag = target.tagName;
 
-      console.log('🎯 DOM handleInputPaste triggered:', {
-        tagName: target.tagName,
-        className: target.className,
-        hasClipboardData: !!pasteEvent.clipboardData,
-        clipboardText: pasteEvent.clipboardData?.getData('text/plain')?.substring(0, 50)
-      });
+      // Native inputs handle their own paste — leave them alone
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-      // Critical: DO NOTHING - let the browser handle paste naturally
-      // Don't call preventDefault, don't call stopPropagation
-      // Just let the input field work normally
+      // For every other element (contenteditable li, td, div, etc.)
+      // block the browser default so content isn't inserted twice.
+      // The React onPaste handler will run on the bubble phase and do the right thing.
+      e.preventDefault();
     };
 
     const handleClickCallout = (e: Event) => {
-      const typeButton = (e.target as HTMLElement).closest('.cb-callout-type-selector button[data-type]') as HTMLElement;
+      const target = e.target as HTMLElement;
+
+      // Click on a type option button — change type and close dropdown
+      const typeButton = target.closest('.cb-callout-type-selector button[data-type]') as HTMLElement;
       if (typeButton) {
         e.preventDefault();
         e.stopPropagation();
         const newType = typeButton.getAttribute('data-type') as 'info' | 'warning' | 'error' | 'success' | 'note';
         const callout = typeButton.closest('.cb-callout') as HTMLElement;
+        const iconContainer = typeButton.closest('.cb-callout-icon-container') as HTMLElement;
         if (callout && newType) {
           saveToHistory();
           setCalloutType(callout, newType);
           emitChange();
         }
+        // Close dropdown after selection
+        if (iconContainer) {
+          iconContainer.classList.remove('cb-dropdown-open');
+        }
+        return;
+      }
+
+      // Click on the icon — toggle dropdown open/closed
+      const iconEl = target.closest('.cb-callout-icon') as HTMLElement;
+      if (iconEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        const iconContainer = iconEl.closest('.cb-callout-icon-container') as HTMLElement;
+        if (iconContainer) {
+          const isOpen = iconContainer.classList.contains('cb-dropdown-open');
+          // Close all other open dropdowns first
+          container.querySelectorAll('.cb-callout-icon-container.cb-dropdown-open').forEach(el => {
+            el.classList.remove('cb-dropdown-open');
+          });
+          // Toggle this one
+          if (!isOpen) {
+            iconContainer.classList.add('cb-dropdown-open');
+          }
+        }
+        return;
+      }
+
+      // Click anywhere outside an open dropdown — close all
+      const openDropdowns = container.querySelectorAll('.cb-callout-icon-container.cb-dropdown-open');
+      if (openDropdowns.length > 0 && !target.closest('.cb-callout-icon-container')) {
+        openDropdowns.forEach(el => el.classList.remove('cb-dropdown-open'));
       }
     };
 
@@ -4014,7 +4132,7 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
     const clickedContentEditable = target.closest('[contenteditable="true"]');
     const clickedBlock = target.closest('.cb-block');
     const clickedDragHandle = target.closest('.cb-block-drag');
-    const clickedInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+    const clickedInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
 
     // Clear selection if:
     // 1. Not holding Shift (multi-select modifier)
@@ -4027,8 +4145,8 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
       setSelectedBlockIds(emptySet);
     }
 
-    // If not clicking on a contenteditable or input field, focus the container
-    // CRITICAL FIX: Don't steal focus from INPUT/TEXTAREA elements
+    // If not clicking on a contenteditable or input/select field, focus the container
+    // CRITICAL FIX: Don't steal focus from INPUT/TEXTAREA/SELECT elements
     if (!clickedContentEditable && !clickedInput) {
       // Focus the container to enable keyboard shortcuts
       containerRef.current.focus();
@@ -4210,17 +4328,34 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
 
     console.log('📥 Pasting content, HTML length:', html.length, 'blocks selected:', selectedBlockIds.size);
 
-    // Parse HTML to detect blocks
+    // Parse the pasted HTML — sanitize it first to strip Word/Google Docs junk
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html || plainText.replace(/\n/g, '<br>');
+    if (html) {
+      tempDiv.innerHTML = sanitizePaste(e.clipboardData);
+    } else {
+      // No HTML — convert plain text to paragraphs
+      tempDiv.innerHTML = convertPlainTextToHtml(plainText);
+    }
 
-    // Check if pasted content contains block-level elements
-    const pastedBlocks = tempDiv.querySelectorAll('h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre, hr, table, figure, details, aside, div.cb-callout, div.cb-code');
+    // Collect only TOP-LEVEL block elements — not nested ones (e.g. <ul> inside <li>).
+    // Strategy: query all candidate blocks, then keep only those whose closest block
+    // ancestor inside tempDiv is tempDiv itself (i.e. they are direct children at the top level,
+    // or at least not nested inside another matched block element).
+    const BLOCK_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre, hr, table, figure, details, aside';
+    const allCandidates = Array.from(tempDiv.querySelectorAll(BLOCK_SELECTOR)) as HTMLElement[];
+
+    // Filter: keep only elements that have no matched-block ancestor within tempDiv
+    const pastedBlocks = allCandidates.filter(el => {
+      let parent = el.parentElement;
+      while (parent && parent !== tempDiv) {
+        if (parent.matches(BLOCK_SELECTOR)) return false; // nested — skip
+        parent = parent.parentElement;
+      }
+      return true;
+    });
 
     if (pastedBlocks.length > 0) {
-      console.log('📦 Pasting', pastedBlocks.length, 'blocks');
-
-      // Multi-block paste - create actual blocks
+      // Determine where to insert — after the currently focused block
       const currentBlock = document.activeElement?.closest('.cb-block') as HTMLElement;
       const currentBlockId = currentBlock?.getAttribute('data-block-id');
 
@@ -4232,33 +4367,34 @@ const AuthorlyEditorInner: React.ForwardRefRenderFunction<
         const blockType = detectBlockType(element);
         const blockData = extractBlockData(element, blockType);
 
-        // Create new block
         const newBlock = insertBlockAfter(blockType, previousBlockId, blockData);
         if (newBlock) {
           previousBlockId = newBlock.getAttribute('data-block-id') || undefined;
         }
       });
 
-      // Clear the current block if it was empty
+      // If the cursor was in an empty block, remove it
       if (currentBlock) {
         const editable = currentBlock.querySelector('[contenteditable="true"]');
         if (editable && editable.textContent?.trim() === '') {
           const blockId = currentBlock.getAttribute('data-block-id');
-          if (blockId) {
-            deleteBlockById(blockId);
-          }
+          if (blockId) deleteBlockById(blockId);
         }
       }
 
       // Clear multi-block selection after paste
       if (selectedBlockIds.size > 0) {
-        console.log('🧹 Clearing multi-block selection after paste');
         setSelectedBlockIds(new Set());
       }
     } else {
-      // Inline paste - sanitize and insert
-      const cleanHtml = sanitizePaste(e.clipboardData);
-      document.execCommand('insertHTML', false, cleanHtml);
+      // No block-level structure found — treat as inline content
+      // Insert sanitized HTML at the cursor position
+      const cleanHtml = tempDiv.innerHTML.trim();
+      if (cleanHtml) {
+        document.execCommand('insertHTML', false, cleanHtml);
+      } else if (plainText) {
+        document.execCommand('insertText', false, plainText);
+      }
     }
 
     updateState();

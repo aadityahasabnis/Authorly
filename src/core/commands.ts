@@ -158,6 +158,8 @@ export function insertLink(container: HTMLElement, url: string, text?: string): 
     link.href = url;
     link.textContent = text;
     link.className = 'cb-link';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     
     range.insertNode(link);
     
@@ -174,6 +176,8 @@ export function insertLink(container: HTMLElement, url: string, text?: string): 
       if (parentLink instanceof HTMLAnchorElement) {
         // Update existing link
         parentLink.href = url;
+        parentLink.target = '_blank';
+        parentLink.rel = 'noopener noreferrer';
         return;
       }
       parentLink = parentLink.parentNode;
@@ -183,6 +187,8 @@ export function insertLink(container: HTMLElement, url: string, text?: string): 
     const link = document.createElement('a');
     link.href = url;
     link.className = 'cb-link';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
     
     try {
       // Try to wrap the selection
@@ -204,6 +210,8 @@ export function insertLink(container: HTMLElement, url: string, text?: string): 
       const createdLink = range.commonAncestorContainer.parentElement?.closest('a');
       if (createdLink) {
         createdLink.className = 'cb-link';
+        createdLink.target = '_blank';
+        createdLink.rel = 'noopener noreferrer';
       }
     }
   }

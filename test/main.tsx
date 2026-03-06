@@ -3,17 +3,19 @@ import ReactDOM from 'react-dom/client';
 import { TestPage } from './TestPage';
 import { NewDeveloperPage } from './NewDeveloperPage';
 import { DeveloperExample } from './DeveloperExample';
+import { Playground } from './Playground';
 
 // Simple hash-based router
 const App: React.FC = () => {
-  const [page, setPage] = useState<'test' | 'developer' | 'docs'>('test');
+  const [page, setPage] = useState<'playground' | 'test' | 'developer' | 'docs'>('playground');
 
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
-      if (hash === 'developer') setPage('developer');
+      if (hash === 'test') setPage('test');
+      else if (hash === 'developer') setPage('developer');
       else if (hash === 'docs') setPage('docs');
-      else setPage('test');
+      else setPage('playground');
     };
     
     handleHashChange();
@@ -49,10 +51,12 @@ const App: React.FC = () => {
   return (
     <>
       <nav style={navStyle}>
+        <a href="#playground" style={linkStyle(page === 'playground')}>Playground</a>
         <a href="#test" style={linkStyle(page === 'test')}>Test Page</a>
         <a href="#developer" style={linkStyle(page === 'developer')}>Simple Example</a>
         <a href="#docs" style={linkStyle(page === 'docs')}>Full Docs</a>
       </nav>
+      {page === 'playground' && <Playground />}
       {page === 'test' && <TestPage />}
       {page === 'developer' && <DeveloperExample />}
       {page === 'docs' && <NewDeveloperPage />}

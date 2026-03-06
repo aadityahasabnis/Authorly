@@ -36,13 +36,14 @@ const ALLOWED_TAGS = new Set([
   'img', 'video', 'audio', 'iframe',
 ]);
 
-// Tags that should be converted to other tags
+// Tags that should be converted to other tags (only for purely inline-content divs)
+// NOTE: div→p conversion is intentionally omitted here; it is handled contextually
+// in sanitizeNode to avoid wrapping block-level children in <p>.
 const TAG_CONVERSIONS: Record<string, string> = {
   'b': 'strong',
   'i': 'em',
   'strike': 's',
   'del': 's',
-  'div': 'p', // Convert divs to paragraphs
 };
 
 // Allowed attributes per tag
@@ -163,7 +164,35 @@ function sanitizeNode(
     const element = child as HTMLElement;
     const tagName = element.tagName.toLowerCase();
 
-    // Check if tag should be converted
+    // Special handling for <div>: convert to <p> only if it contains no block-level children.
+    // Otherwise unwrap it so its block children surface at the parent level.
+    if (tagName === 'div') {
+      const hasBlockChild = Array.from(element.children).some(c =>
+        isBlockElement(c.tagName)
+      );
+      if (hasBlockChild) {
+        // Unwrap — let block children bubble up
+        const fragment = document.createDocumentFragment();
+        while (element.firstChild) fragment.appendChild(element.firstChild);
+        nodesToReplace.push({ old: element, new: fragment });
+        // The fragment's children will be processed in the next pass because we
+        // replaced the node in-place; recurse into the fragment-content nodes.
+        fragment.childNodes.forEach(fc => {
+          if (fc.nodeType === Node.ELEMENT_NODE) {
+            sanitizeNode(fc as HTMLElement, options, depth + 1);
+          }
+        });
+      } else {
+        // Inline-only content — convert div to p
+        const p = document.createElement('p');
+        p.innerHTML = element.innerHTML;
+        nodesToReplace.push({ old: element, new: p });
+        sanitizeNode(p, options, depth + 1);
+      }
+      return;
+    }
+
+    // Check if tag should be converted (b→strong, i→em, etc.)
     const convertedTag = TAG_CONVERSIONS[tagName];
     if (convertedTag) {
       const newElement = document.createElement(convertedTag);
@@ -390,30 +419,41 @@ export function sanitizePaste(
  * Clean Microsoft Word and Google Docs content
  */
 function cleanOfficeContent(html: string): string {
+  // Strip <html>, <head>, <body> wrappers — extract body content only
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch) html = bodyMatch[1];
+
   // Remove Word-specific tags and namespaces
   html = html.replace(/<\/?o:[^>]*>/gi, '');
   html = html.replace(/<\/?w:[^>]*>/gi, '');
   html = html.replace(/<\/?m:[^>]*>/gi, '');
   html = html.replace(/<\/?st1:[^>]*>/gi, '');
-  
+
   // Remove Office namespace declarations
   html = html.replace(/\s*xmlns:[a-z]+="[^"]*"/gi, '');
-  
+
   // Remove mso- styles
   html = html.replace(/mso-[^;:"']+:[^;:"']+;?/gi, '');
-  
+
   // Remove class="Mso*"
   html = html.replace(/class="?Mso[^">\s]*/gi, '');
-  
-  // Remove empty spans
-  html = html.replace(/<span[^>]*>\s*<\/span>/gi, '');
-  
+
+  // Remove Google Docs wrapper: <b id="docs-internal-guid-...">...</b>
+  // Google Docs wraps the entire content in a <b> tag
+  html = html.replace(/<b\s+id="docs-internal-guid-[^"]*"[^>]*>([\s\S]*?)<\/b>/gi, '$1');
+
   // Remove Google Docs specific IDs
   html = html.replace(/id="docs-internal-guid-[^"]*"/gi, '');
-  
-  // Clean up extra whitespace
-  html = html.replace(/\s{2,}/g, ' ');
-  
+
+  // Remove empty spans and formatting-only spans with no useful content
+  html = html.replace(/<span[^>]*>\s*<\/span>/gi, '');
+
+  // Remove Word/Docs conditional comments
+  html = html.replace(/<!--\[if[^\]]*\]>[\s\S]*?<!\[endif\]-->/gi, '');
+
+  // Clean up extra whitespace (but preserve newlines for block detection)
+  html = html.replace(/[ \t]{2,}/g, ' ');
+
   return html;
 }
 

@@ -14,6 +14,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { Highlight, themes } from 'prism-react-renderer';
 
 export interface AuthorlyRendererProps {
   /** HTML content to render */
@@ -30,6 +31,8 @@ export interface AuthorlyRendererProps {
   enableChecklistStyles?: boolean;
   /** Add IDs to headings for navigation */
   enableHeadingIds?: boolean;
+  /** Enable syntax highlighting for code blocks */
+  enableSyntaxHighlighting?: boolean;
   /** Class prefix for custom styling */
   classPrefix?: string;
 }
@@ -55,6 +58,7 @@ function processHtml(
     enableCodeCopy: boolean;
     enableChecklistStyles: boolean;
     enableHeadingIds: boolean;
+    enableSyntaxHighlighting: boolean;
   }
 ): string {
   if (!html) return '';
@@ -73,7 +77,8 @@ function processHtml(
   }
   
   // Enhance code blocks with wrapper and copy button
-  if (options.enableCodeCopy) {
+  // Skip this if syntax highlighting is enabled (it will handle code blocks with React components)
+  if (options.enableCodeCopy && !options.enableSyntaxHighlighting) {
     const codeBlocks = doc.querySelectorAll('pre');
     codeBlocks.forEach((pre, index) => {
       // Skip if already processed
@@ -82,11 +87,29 @@ function processHtml(
       const code = pre.querySelector('code');
       const codeContent = code?.textContent || pre.textContent || '';
       
+      // Get language from data attribute or class name
+      let language = pre.getAttribute('data-language') || 'Code';
+      if (!language || language === 'Code') {
+        // Try to extract from code element's class (e.g., "language-javascript")
+        const codeClass = code?.className || '';
+        const langMatch = codeClass.match(/language-(\w+)/);
+        if (langMatch) {
+          language = langMatch[1].charAt(0).toUpperCase() + langMatch[1].slice(1);
+        }
+      }
+      
       const wrapper = doc.createElement('div');
       wrapper.className = 'cbr-code-wrapper';
       wrapper.innerHTML = `
         <div class="cbr-code-toolbar">
-          <span class="cbr-code-lang">Code</span>
+          <div class="cbr-code-toolbar-left">
+            <div class="cbr-code-dots">
+              <span class="cbr-code-dot cbr-code-dot-red"></span>
+              <span class="cbr-code-dot cbr-code-dot-yellow"></span>
+              <span class="cbr-code-dot cbr-code-dot-green"></span>
+            </div>
+            <span class="cbr-code-lang">${escapeHtml(language)}</span>
+          </div>
           <button class="cbr-code-copy" data-code-index="${index}" onclick="
             navigator.clipboard.writeText(this.closest('.cbr-code-wrapper').querySelector('code').textContent);
             this.textContent = 'Copied!';
@@ -111,11 +134,212 @@ function processHtml(
     });
   }
 
-  // Remove editor-only elements
-  doc.querySelectorAll('.cb-image-controls, .cb-image-placeholder, .cb-video-placeholder, .cb-callout-type-selector, .cb-image-resize-handle').forEach(el => el.remove());
+  // Remove editor-only elements (but keep callout icons for display)
+  doc.querySelectorAll('.cb-image-controls, .cb-image-placeholder, .cb-video-placeholder, .cb-image-resize-handle').forEach(el => el.remove());
+  
+  // For callout icons, remove the dropdown but keep the icon itself
+  doc.querySelectorAll('.cb-callout-icon-container').forEach(container => {
+    // Remove the type selector dropdown
+    const dropdown = container.querySelector('.cb-callout-type-selector');
+    if (dropdown) dropdown.remove();
+    
+    // Remove interactive attributes from the icon
+    const icon = container.querySelector('.cb-callout-icon');
+    if (icon) {
+      icon.removeAttribute('role');
+      icon.removeAttribute('tabindex');
+      icon.removeAttribute('title');
+    }
+  });
+
+  // Ensure all links open safely in a new tab
+  doc.querySelectorAll('a[href]').forEach((anchor) => {
+    const a = anchor as HTMLAnchorElement;
+    if (!a.target) a.target = '_blank';
+    if (!a.rel) a.rel = 'noopener noreferrer';
+  });
   
   return doc.body.innerHTML;
 }
+
+// Syntax Highlighted Code Component with Mac-style header (matching test-authorly-next)
+interface SyntaxHighlightedCodeProps {
+  code: string;
+  language: string;
+  darkMode: boolean;
+}
+
+const SyntaxHighlightedCode: React.FC<SyntaxHighlightedCodeProps> = ({ code, language, darkMode }) => {
+  const [copied, setCopied] = React.useState(false);
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div 
+      style={{ 
+        position: 'relative',
+        margin: '1.5rem 0',
+        borderRadius: '0.75rem',
+        overflow: 'hidden',
+        border: darkMode ? '1px solid #27272a' : '1px solid #e4e4e7',
+        background: darkMode ? '#011627' : '#f9fafb',
+        boxShadow: darkMode 
+          ? '0 10px 15px -3px rgba(0,0,0,0.3), 0 4px 6px -2px rgba(0,0,0,0.2)' 
+          : '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Mac-style header with dots and language badge */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.625rem 1rem',
+          background: darkMode ? 'rgba(39, 39, 42, 0.5)' : 'rgba(244, 244, 245, 0.8)',
+          borderBottom: darkMode ? '1px solid #27272a' : '1px solid #e4e4e7',
+        }}
+      >
+        {/* Left: Mac dots + language */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {/* Mac window dots */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <div style={{ 
+              width: '0.75rem', 
+              height: '0.75rem', 
+              borderRadius: '50%', 
+              background: 'rgba(239, 68, 68, 0.8)' 
+            }} />
+            <div style={{ 
+              width: '0.75rem', 
+              height: '0.75rem', 
+              borderRadius: '50%', 
+              background: 'rgba(234, 179, 8, 0.8)' 
+            }} />
+            <div style={{ 
+              width: '0.75rem', 
+              height: '0.75rem', 
+              borderRadius: '50%', 
+              background: 'rgba(34, 197, 94, 0.8)' 
+            }} />
+          </div>
+          {/* Language label */}
+          {language && language !== 'text' && (
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 500,
+                color: darkMode ? '#a1a1aa' : '#71717a',
+                marginLeft: '0.5rem',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+              }}
+            >
+              {language}
+            </span>
+          )}
+        </div>
+        
+        {/* Right: Copy button */}
+        <button
+          onClick={handleCopy}
+          aria-label="Copy code"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.375rem',
+            padding: '0.25rem 0.625rem',
+            background: 'transparent',
+            border: 'none',
+            borderRadius: '0.375rem',
+            color: darkMode ? '#a1a1aa' : '#71717a',
+            fontSize: '0.75rem',
+            cursor: 'pointer',
+            opacity: isHovered ? 1 : 0,
+            transition: 'all 0.2s ease',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = darkMode ? '#27272a' : '#e4e4e7';
+            e.currentTarget.style.color = darkMode ? '#e4e4e7' : '#18181b';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = darkMode ? '#a1a1aa' : '#71717a';
+          }}
+        >
+          {copied ? (
+            <>
+              <svg width="14" height="14" fill="none" stroke="#22c55e" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span style={{ color: '#22c55e' }}>Copied!</span>
+            </>
+          ) : (
+            <>
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+              </svg>
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      
+      {/* Code content with syntax highlighting */}
+      <Highlight
+        theme={darkMode ? themes.nightOwl : themes.github}
+        code={code.trim()}
+        language={language as any}
+      >
+        {({ className: highlightClassName, style, tokens, getLineProps, getTokenProps }) => (
+          <pre
+            className={highlightClassName}
+            style={{
+              ...style,
+              background: 'transparent',
+              margin: 0,
+              padding: '1rem',
+              overflow: 'auto',
+              fontSize: '0.875rem',
+              lineHeight: '1.7',
+              fontFamily: "'Fira Code', 'JetBrains Mono', 'Consolas', 'Monaco', 'Courier New', monospace",
+            }}
+          >
+            {tokens.map((line, i) => (
+              <div key={i} style={{ display: 'table-row' }} {...getLineProps({ line })}>
+                {/* Line number */}
+                <span 
+                  style={{ 
+                    display: 'table-cell',
+                    paddingRight: '1rem',
+                    textAlign: 'right',
+                    width: '2rem',
+                    color: darkMode ? '#52525b' : '#d4d4d8',
+                    userSelect: 'none',
+                  }}
+                >
+                  {i + 1}
+                </span>
+                {/* Line content */}
+                <span style={{ display: 'table-cell' }}>
+                  {line.map((token, key) => (
+                    <span key={key} {...getTokenProps({ token })} />
+                  ))}
+                </span>
+              </div>
+            ))}
+          </pre>
+        )}
+      </Highlight>
+    </div>
+  );
+};
 
 // Generate CSS styles based on dark mode
 function generateStyles(darkMode: boolean, classPrefix: string): string {
@@ -229,6 +453,7 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
       border: 1px solid ${colors.border};
       border-radius: 0.5rem;
       overflow: hidden;
+      background: ${colors.bgSecondary};
     }
     .${p} .cbr-code-toolbar {
       display: flex;
@@ -237,6 +462,31 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
       padding: 0.5rem 0.75rem;
       background: ${colors.bgTertiary};
       border-bottom: 1px solid ${colors.borderLight};
+    }
+    .${p} .cbr-code-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .${p} .cbr-code-dots {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .${p} .cbr-code-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .${p} .cbr-code-dot-red {
+      background-color: #ff5f56;
+    }
+    .${p} .cbr-code-dot-yellow {
+      background-color: #ffbd2e;
+    }
+    .${p} .cbr-code-dot-green {
+      background-color: #27c93f;
     }
     .${p} .cbr-code-lang {
       font-size: 0.75rem;
@@ -274,21 +524,44 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
     }
 
     /* Images */
-    .${p} img { max-width: 100%; height: auto; border-radius: 0.5rem; }
-    .${p} figure { margin: 1rem 0; }
+    .${p} img { max-width: 100%; height: auto; border-radius: 0.5rem; display: block; }
+    .${p} figure {
+      margin: 1.5rem 0;
+    }
     .${p} figure[data-align="center"] { text-align: center; }
-    .${p} figure[data-align="center"] img { display: inline-block; }
+    .${p} figure[data-align="center"] img,
+    .${p} figure[data-align="center"] video { display: inline-block; }
     .${p} figure[data-align="right"] { text-align: right; }
-    .${p} figure[data-align="right"] img { display: inline-block; }
+    .${p} figure[data-align="right"] img,
+    .${p} figure[data-align="right"] video { display: inline-block; }
     .${p} figure[data-align="left"] { text-align: left; }
-    .${p} figcaption { 
-      font-size: 0.875rem; 
-      color: ${colors.textMuted}; 
-      margin-top: 0.5rem; 
+    .${p} figcaption {
+      font-size: 0.8125rem;
+      color: ${colors.textMuted};
+      margin-top: 0.5rem;
+      text-align: center;
     }
 
     /* Video */
-    .${p} .cb-video { margin: 1rem 0; }
+    .${p} figure[data-block-type="video"] > div {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio */
+      border-radius: 0.5rem;
+      overflow: hidden;
+      background: ${colors.bgSecondary};
+    }
+    .${p} figure[data-block-type="video"] > div iframe,
+    .${p} figure[data-block-type="video"] > div video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 0.5rem;
+    }
+    .${p} .cb-video { margin: 1.5rem 0; }
     .${p} .cb-video iframe { max-width: 100%; border-radius: 0.5rem; }
 
     /* Tables */
@@ -317,10 +590,10 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
     /* Callouts */
     .${p} aside, .${p} .cb-callout {
       display: flex;
-      gap: 0.75rem;
+      gap: 1rem;
       margin: 1rem 0;
       padding: 1rem;
-      border-radius: 0.5rem;
+      border-radius: 0.375rem;
       border: 1px solid;
     }
     .${p} aside[data-callout-type="info"], .${p} .cb-callout[data-callout-type="info"] {
@@ -343,12 +616,63 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
       background: ${colors.bgTertiary};
       border-color: ${colors.border};
     }
-    .${p} .cb-callout-icon {
+    
+    /* Callout icon container */
+    .${p} .cb-callout-icon-container {
       flex-shrink: 0;
-      width: 24px;
-      height: 24px;
     }
-    .${p} .cb-callout-content { flex: 1; }
+    
+    /* Callout icon with colored background */
+    .${p} .cb-callout-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 0.375rem;
+      margin-top: 2px;
+    }
+    
+    /* Info icon */
+    .${p} .cb-callout[data-callout-type="info"] .cb-callout-icon,
+    .${p} aside[data-callout-type="info"] .cb-callout-icon {
+      background: rgba(59, 130, 246, 0.1);
+      color: #3b82f6;
+    }
+    
+    /* Success icon */
+    .${p} .cb-callout[data-callout-type="success"] .cb-callout-icon,
+    .${p} aside[data-callout-type="success"] .cb-callout-icon {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+    }
+    
+    /* Warning icon */
+    .${p} .cb-callout[data-callout-type="warning"] .cb-callout-icon,
+    .${p} aside[data-callout-type="warning"] .cb-callout-icon {
+      background: rgba(245, 158, 11, 0.1);
+      color: #f59e0b;
+    }
+    
+    /* Error icon */
+    .${p} .cb-callout[data-callout-type="error"] .cb-callout-icon,
+    .${p} aside[data-callout-type="error"] .cb-callout-icon {
+      background: rgba(239, 68, 68, 0.1);
+      color: #ef4444;
+    }
+    
+    /* Note icon */
+    .${p} .cb-callout[data-callout-type="note"] .cb-callout-icon,
+    .${p} aside[data-callout-type="note"] .cb-callout-icon {
+      background: rgba(139, 92, 246, 0.1);
+      color: #8b5cf6;
+    }
+    
+    /* Callout content */
+    .${p} .cb-callout-content { 
+      flex: 1;
+      min-width: 0;
+    }
     .${p} .cb-callout-content p { margin: 0; }
 
     /* Accordion */
@@ -359,12 +683,20 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
       overflow: hidden;
     }
     .${p} summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 0.75rem 1rem;
       background: ${colors.bgSecondary};
       cursor: pointer;
       font-weight: 500;
+      list-style: none;
+      user-select: none;
     }
+    .${p} summary::-webkit-details-marker { display: none; }
+    .${p} summary::marker { display: none; }
     .${p} summary:hover { background: ${colors.bgTertiary}; }
+    .${p} details[open] summary { border-bottom: 1px solid ${colors.border}; }
     .${p} details > div, .${p} details > p:not(:first-child) {
       padding: 1rem;
     }
@@ -378,14 +710,14 @@ function generateStyles(darkMode: boolean, classPrefix: string): string {
 }
 
 /**
- * AuthorlyRenderer - Renders HTML content with beautiful styling
+ * AuthorlyRenderer - Renders HTML content with beautiful styling and syntax highlighting
  * 
  * @example
  * ```tsx
  * import { AuthorlyRenderer } from 'authorly';
  * 
  * function Preview({ html }) {
- *   return <AuthorlyRenderer html={html} darkMode={false} />;
+ *   return <AuthorlyRenderer html={html} darkMode={false} enableSyntaxHighlighting />;
  * }
  * ```
  */
@@ -397,6 +729,7 @@ export const AuthorlyRenderer: React.FC<AuthorlyRendererProps> = ({
   enableCodeCopy = true,
   enableChecklistStyles = true,
   enableHeadingIds = true,
+  enableSyntaxHighlighting = true,
   classPrefix = 'cbr-content',
 }) => {
   // Process HTML
@@ -405,13 +738,89 @@ export const AuthorlyRenderer: React.FC<AuthorlyRendererProps> = ({
       enableCodeCopy,
       enableChecklistStyles,
       enableHeadingIds,
+      enableSyntaxHighlighting,
     });
-  }, [html, enableCodeCopy, enableChecklistStyles, enableHeadingIds]);
+  }, [html, enableCodeCopy, enableChecklistStyles, enableHeadingIds, enableSyntaxHighlighting]);
 
   // Generate styles
   const styles = useMemo(() => {
     return generateStyles(darkMode, classPrefix);
   }, [darkMode, classPrefix]);
+
+  // Parse HTML and render with syntax highlighting
+  const content = useMemo(() => {
+    if (!enableSyntaxHighlighting) {
+      return <div dangerouslySetInnerHTML={{ __html: processedHtml }} />;
+    }
+
+    // Parse HTML to extract code blocks
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(processedHtml, 'text/html');
+    const codeBlocks = doc.querySelectorAll('pre code');
+    
+    if (codeBlocks.length === 0) {
+      return <div dangerouslySetInnerHTML={{ __html: processedHtml }} />;
+    }
+
+    // Replace each code block with a unique placeholder
+    const codeBlocksData: Array<{ code: string; language: string; placeholder: string }> = [];
+    codeBlocks.forEach((codeEl, index) => {
+      const pre = codeEl.parentElement;
+      if (pre && pre.tagName === 'PRE') {
+        const language = pre.getAttribute('data-language') || 'text';
+        const code = codeEl.textContent || '';
+        const placeholder = `___CODE_BLOCK_${index}___`;
+        codeBlocksData.push({ code, language, placeholder });
+        
+        // Replace the entire <pre> element with placeholder
+        const placeholderNode = doc.createTextNode(placeholder);
+        pre.parentNode?.replaceChild(placeholderNode, pre);
+      }
+    });
+
+    // Get the modified HTML with placeholders
+    const htmlWithPlaceholders = doc.body.innerHTML;
+    
+    // Split by placeholders and build React elements
+    const parts: React.ReactNode[] = [];
+    let remainingHtml = htmlWithPlaceholders;
+    
+    codeBlocksData.forEach(({ code, language, placeholder }, index) => {
+      const splitIndex = remainingHtml.indexOf(placeholder);
+      
+      if (splitIndex !== -1) {
+        // Add HTML before the placeholder
+        const htmlBefore = remainingHtml.substring(0, splitIndex);
+        if (htmlBefore.trim()) {
+          parts.push(
+            <div key={`html-${index}`} dangerouslySetInnerHTML={{ __html: htmlBefore }} />
+          );
+        }
+        
+        // Add the syntax highlighted code block
+        parts.push(
+          <SyntaxHighlightedCode
+            key={`code-${index}`}
+            code={code}
+            language={language}
+            darkMode={darkMode}
+          />
+        );
+        
+        // Update remaining HTML (skip the placeholder)
+        remainingHtml = remainingHtml.substring(splitIndex + placeholder.length);
+      }
+    });
+    
+    // Add any remaining HTML after the last code block
+    if (remainingHtml.trim()) {
+      parts.push(
+        <div key="html-end" dangerouslySetInnerHTML={{ __html: remainingHtml }} />
+      );
+    }
+    
+    return <>{parts}</>;
+  }, [processedHtml, enableSyntaxHighlighting, darkMode]);
 
   if (!html) {
     return (
@@ -425,7 +834,7 @@ export const AuthorlyRenderer: React.FC<AuthorlyRendererProps> = ({
   return (
     <div className={`${classPrefix} ${className}`.trim()} style={style}>
       <style>{styles}</style>
-      <div dangerouslySetInnerHTML={{ __html: processedHtml }} />
+      {content}
     </div>
   );
 };

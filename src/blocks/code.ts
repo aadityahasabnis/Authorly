@@ -49,10 +49,24 @@ export const codeBlock: BlockDefinition = {
     wrapper.setAttribute('data-block-id', data?.id || generateId());
     wrapper.setAttribute('data-block-type', 'code');
 
-    // Language selector bar
+    // Mac-style toolbar with dots, language, and copy button
     const toolbar = document.createElement('div');
     toolbar.className = 'cb-code-toolbar';
 
+    // Mac-style dots and language section
+    const leftSection = document.createElement('div');
+    leftSection.className = 'cb-code-toolbar-left';
+
+    // Mac dots
+    const dots = document.createElement('div');
+    dots.className = 'cb-code-dots';
+    dots.innerHTML = `
+      <span class="cb-code-dot cb-code-dot-red"></span>
+      <span class="cb-code-dot cb-code-dot-yellow"></span>
+      <span class="cb-code-dot cb-code-dot-green"></span>
+    `;
+
+    // Language selector (styled as a label that can be clicked)
     const langSelect = document.createElement('select');
     langSelect.className = 'cb-code-language';
     langSelect.setAttribute('tabindex', '-1');
@@ -66,6 +80,9 @@ export const codeBlock: BlockDefinition = {
       }
       langSelect.appendChild(option);
     });
+
+    leftSection.appendChild(dots);
+    leftSection.appendChild(langSelect);
 
     // Copy button
     const copyBtn = document.createElement('button');
@@ -84,7 +101,7 @@ export const codeBlock: BlockDefinition = {
       }
     };
 
-    toolbar.appendChild(langSelect);
+    toolbar.appendChild(leftSection);
     toolbar.appendChild(copyBtn);
 
     // Code container

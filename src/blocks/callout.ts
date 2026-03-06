@@ -37,11 +37,43 @@ export const calloutBlock: BlockDefinition = {
     aside.setAttribute('data-block-type', 'callout');
     aside.setAttribute('data-callout-type', calloutType);
 
-    // Icon
+    // Icon container — holds the clickable icon and its dropdown
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'cb-callout-icon-container';
+
+    // Icon button — clicking it opens the type dropdown
     const iconWrapper = document.createElement('div');
     iconWrapper.className = 'cb-callout-icon';
+    iconWrapper.setAttribute('role', 'button');
+    iconWrapper.setAttribute('tabindex', '0');
+    iconWrapper.setAttribute('title', 'Change callout type');
     iconWrapper.innerHTML = CALLOUT_ICONS[calloutType];
-    aside.appendChild(iconWrapper);
+
+    // Type dropdown — vertical list, shown when icon is clicked
+    const typeSelector = document.createElement('div');
+    typeSelector.className = 'cb-callout-type-selector';
+    typeSelector.setAttribute('aria-label', 'Select callout type');
+    typeSelector.innerHTML = `
+      <button type="button" data-type="info" title="Info" class="${calloutType === 'info' ? 'active' : ''}">
+        ${CALLOUT_ICONS.info}<span>Info</span>
+      </button>
+      <button type="button" data-type="success" title="Success" class="${calloutType === 'success' ? 'active' : ''}">
+        ${CALLOUT_ICONS.success}<span>Success</span>
+      </button>
+      <button type="button" data-type="warning" title="Warning" class="${calloutType === 'warning' ? 'active' : ''}">
+        ${CALLOUT_ICONS.warning}<span>Warning</span>
+      </button>
+      <button type="button" data-type="error" title="Error" class="${calloutType === 'error' ? 'active' : ''}">
+        ${CALLOUT_ICONS.error}<span>Error</span>
+      </button>
+      <button type="button" data-type="note" title="Note" class="${calloutType === 'note' ? 'active' : ''}">
+        ${CALLOUT_ICONS.note}<span>Note</span>
+      </button>
+    `;
+
+    iconContainer.appendChild(iconWrapper);
+    iconContainer.appendChild(typeSelector);
+    aside.appendChild(iconContainer);
 
     // Content wrapper
     const contentWrapper = document.createElement('div');
@@ -65,30 +97,7 @@ export const calloutBlock: BlockDefinition = {
       body.innerHTML = data.content;
     }
     contentWrapper.appendChild(body);
-
     aside.appendChild(contentWrapper);
-
-    // Type selector (hidden by default, shown on focus)
-    const typeSelector = document.createElement('div');
-    typeSelector.className = 'cb-callout-type-selector';
-    typeSelector.innerHTML = `
-      <button type="button" data-type="info" title="Info" class="${calloutType === 'info' ? 'active' : ''}">
-        ${CALLOUT_ICONS.info}
-      </button>
-      <button type="button" data-type="success" title="Success" class="${calloutType === 'success' ? 'active' : ''}">
-        ${CALLOUT_ICONS.success}
-      </button>
-      <button type="button" data-type="warning" title="Warning" class="${calloutType === 'warning' ? 'active' : ''}">
-        ${CALLOUT_ICONS.warning}
-      </button>
-      <button type="button" data-type="error" title="Error" class="${calloutType === 'error' ? 'active' : ''}">
-        ${CALLOUT_ICONS.error}
-      </button>
-      <button type="button" data-type="note" title="Note" class="${calloutType === 'note' ? 'active' : ''}">
-        ${CALLOUT_ICONS.note}
-      </button>
-    `;
-    aside.appendChild(typeSelector);
 
     return aside;
   },
