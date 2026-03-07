@@ -20,6 +20,8 @@ export {
   ContentBlocksRenderer, // @deprecated - Use AuthorlyRenderer instead
   type AuthorlyRendererProps,
   type ContentBlocksRendererProps, // @deprecated - Use AuthorlyRendererProps instead
+  processHtml,
+  type ProcessHtmlOptions,
 } from './components/Renderer';
 export { 
   AuthorlyTOC,

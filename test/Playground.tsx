@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { AuthorlyEditor, AuthorlyRenderer, AuthorlyTOC, type EditorRef } from '../src';
+import { AuthorlyEditor, AuthorlyRenderer, AuthorlyTOC, processHtml, type EditorRef } from '../src';
 import '../src/styles/editor.css';
+import '../src/styles/renderer.css';
 
 export const Playground: React.FC = () => {
   const editorRef = useRef<EditorRef>(null);
@@ -330,13 +331,14 @@ export const Playground: React.FC = () => {
                     enableSyntaxHighlighting
                   />
                 ) : (
-                  <div 
-                    style={{
-                      fontFamily: 'system-ui, -apple-system, sans-serif',
-                      lineHeight: '1.7',
-                      color: darkMode ? '#f9fafb' : '#111827',
-                    }}
-                    dangerouslySetInnerHTML={{ __html: content }}
+                  <div
+                    className={`cbr-content${darkMode ? ' cbr-dark' : ''}`}
+                    dangerouslySetInnerHTML={{ __html: processHtml(content, {
+                      enableCodeCopy: true,
+                      enableChecklistStyles: true,
+                      enableHeadingIds: true,
+                      enableSyntaxHighlighting: false,
+                    }) }}
                   />
                 )}
               </div>

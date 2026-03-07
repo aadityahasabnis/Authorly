@@ -51,21 +51,60 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#039;');
 }
 
-// Process HTML for rendering
-function processHtml(
-  html: string, 
-  options: {
-    enableCodeCopy: boolean;
-    enableChecklistStyles: boolean;
-    enableHeadingIds: boolean;
-    enableSyntaxHighlighting: boolean;
-  }
-): string {
+/** Options for processHtml */
+export interface ProcessHtmlOptions {
+  /** Wrap code blocks with a toolbar (mac dots, language label, copy button). Default: true */
+  enableCodeCopy?: boolean;
+  /** Add cbr-checked-item class to completed checklist items. Default: true */
+  enableChecklistStyles?: boolean;
+  /** Add id attributes to headings for anchor navigation. Default: true */
+  enableHeadingIds?: boolean;
+  /** When true, skips code block wrapping (for use with AuthorlyRenderer's React syntax highlighting). Default: false */
+  enableSyntaxHighlighting?: boolean;
+}
+
+/**
+ * Transform raw editor HTML into renderer-ready HTML.
+ *
+ * SSR-safe: uses DOMParser in the browser, regex fallback in Node.js
+ * (Next.js server components, API routes, etc.).
+ *
+ * @example Next.js page
+ * ```tsx
+ * import { processHtml } from 'authorly-editor';
+ * import 'authorly-editor/styles/renderer.css';
+ *
+ * export default function BlogPost({ html }) {
+ *   return (
+ *     <div
+ *       className="cbr-content"
+ *       dangerouslySetInnerHTML={{ __html: processHtml(html) }}
+ *     />
+ *   );
+ * }
+ * ```
+ */
+export function processHtml(html: string, options: ProcessHtmlOptions = {}): string {
   if (!html) return '';
-  
+  const opts: Required<ProcessHtmlOptions> = {
+    enableCodeCopy: options.enableCodeCopy ?? true,
+    enableChecklistStyles: options.enableChecklistStyles ?? true,
+    enableHeadingIds: options.enableHeadingIds ?? true,
+    enableSyntaxHighlighting: options.enableSyntaxHighlighting ?? false,
+  };
+  // Browser: DOMParser handles nested/malformed HTML more reliably
+  if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
+    return _processHtmlDom(html, opts);
+  }
+  // SSR (Next.js server components, Node.js): regex-based fallback
+  return _processHtmlRegex(html, opts);
+}
+
+// --- DOMParser implementation (browser) ---
+function _processHtmlDom(html: string, options: Required<ProcessHtmlOptions>): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
-  
+
   // Add IDs to headings for navigation
   if (options.enableHeadingIds) {
     const headings = doc.querySelectorAll('h1, h2, h3, h4, h5, h6');
@@ -75,29 +114,26 @@ function processHtml(
       }
     });
   }
-  
+
   // Enhance code blocks with wrapper and copy button
-  // Skip this if syntax highlighting is enabled (it will handle code blocks with React components)
+  // Skip this if syntax highlighting is enabled (handled by SyntaxHighlightedCode React component)
   if (options.enableCodeCopy && !options.enableSyntaxHighlighting) {
     const codeBlocks = doc.querySelectorAll('pre');
     codeBlocks.forEach((pre, index) => {
-      // Skip if already processed
       if (pre.parentElement?.classList.contains('cbr-code-wrapper')) return;
-      
+
       const code = pre.querySelector('code');
       const codeContent = code?.textContent || pre.textContent || '';
-      
-      // Get language from data attribute or class name
+
       let language = pre.getAttribute('data-language') || 'Code';
       if (!language || language === 'Code') {
-        // Try to extract from code element's class (e.g., "language-javascript")
         const codeClass = code?.className || '';
         const langMatch = codeClass.match(/language-(\w+)/);
         if (langMatch) {
           language = langMatch[1].charAt(0).toUpperCase() + langMatch[1].slice(1);
         }
       }
-      
+
       const wrapper = doc.createElement('div');
       wrapper.className = 'cbr-code-wrapper';
       wrapper.innerHTML = `
@@ -118,11 +154,11 @@ function processHtml(
         </div>
         <pre class="cbr-code-block"><code>${escapeHtml(codeContent)}</code></pre>
       `;
-      
+
       pre.replaceWith(wrapper);
     });
   }
-  
+
   // Handle checklist items - add class for checked items
   if (options.enableChecklistStyles) {
     const checklistItems = doc.querySelectorAll('li');
@@ -134,16 +170,13 @@ function processHtml(
     });
   }
 
-  // Remove editor-only elements (but keep callout icons for display)
+  // Remove editor-only elements (keep callout icons)
   doc.querySelectorAll('.cb-image-controls, .cb-image-placeholder, .cb-video-placeholder, .cb-image-resize-handle').forEach(el => el.remove());
-  
-  // For callout icons, remove the dropdown but keep the icon itself
+
+  // Remove callout dropdown, keep icon
   doc.querySelectorAll('.cb-callout-icon-container').forEach(container => {
-    // Remove the type selector dropdown
     const dropdown = container.querySelector('.cb-callout-type-selector');
     if (dropdown) dropdown.remove();
-    
-    // Remove interactive attributes from the icon
     const icon = container.querySelector('.cb-callout-icon');
     if (icon) {
       icon.removeAttribute('role');
@@ -158,8 +191,93 @@ function processHtml(
     if (!a.target) a.target = '_blank';
     if (!a.rel) a.rel = 'noopener noreferrer';
   });
-  
+
   return doc.body.innerHTML;
+}
+
+// --- Regex implementation (SSR / Node.js) ---
+function _processHtmlRegex(html: string, options: Required<ProcessHtmlOptions>): string {
+  let result = html;
+
+  // Remove editor-only elements (self-contained divs injected by the editor UI)
+  const editorOnlyClasses = [
+    'cb-image-controls', 'cb-image-placeholder',
+    'cb-video-placeholder', 'cb-image-resize-handle',
+    'cb-callout-type-selector',
+  ];
+  editorOnlyClasses.forEach(cls => {
+    result = result.replace(
+      new RegExp(`<[^>]+class="[^"]*${cls}[^"]*"[^>]*>[\\s\\S]*?<\\/[a-z][a-z0-9]*>`, 'gi'),
+      ''
+    );
+  });
+
+  // Add heading IDs
+  if (options.enableHeadingIds) {
+    let idx = 0;
+    result = result.replace(/<(h[1-6])([^>]*)>/gi, (_, tag, attrs) => {
+      if (/\bid=/.test(attrs)) return `<${tag}${attrs}>`;
+      return `<${tag}${attrs} id="heading-${idx++}">`;
+    });
+  }
+
+  // Wrap code blocks with mac-dots toolbar
+  if (options.enableCodeCopy && !options.enableSyntaxHighlighting) {
+    result = result.replace(
+      /<pre([^>]*)><code([^>]*)>([\s\S]*?)<\/code><\/pre>/gi,
+      (_, preAttrs, codeAttrs, content) => {
+        let lang = 'Code';
+        const m1 = preAttrs.match(/data-language="([^"]*)"/i);
+        const m2 = codeAttrs.match(/language-(\w+)/i);
+        if (m1?.[1]) lang = m1[1];
+        else if (m2?.[1]) lang = m2[1].charAt(0).toUpperCase() + m2[1].slice(1);
+        const safeL = lang.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        // Note: content is already HTML-escaped by the editor
+        return (
+          `<div class="cbr-code-wrapper">` +
+            `<div class="cbr-code-toolbar">` +
+              `<div class="cbr-code-toolbar-left">` +
+                `<div class="cbr-code-dots">` +
+                  `<span class="cbr-code-dot cbr-code-dot-red"></span>` +
+                  `<span class="cbr-code-dot cbr-code-dot-yellow"></span>` +
+                  `<span class="cbr-code-dot cbr-code-dot-green"></span>` +
+                `</div>` +
+                `<span class="cbr-code-lang">${safeL}</span>` +
+              `</div>` +
+              `<button class="cbr-code-copy" onclick="(function(b){` +
+                `navigator.clipboard.writeText(b.closest('.cbr-code-wrapper').querySelector('code').textContent);` +
+                `b.textContent='Copied!';` +
+                `setTimeout(function(){b.textContent='Copy'},2000)` +
+              `})(this)">Copy</button>` +
+            `</div>` +
+            `<pre class="cbr-code-block"><code>${content}</code></pre>` +
+          `</div>`
+        );
+      }
+    );
+  }
+
+  // Handle checklist items
+  if (options.enableChecklistStyles) {
+    result = result.replace(/<li([^>]*)>([\s\S]*?)<\/li>/gi, (match, attrs, content) => {
+      if (/\bchecked\b/.test(content) && /type="checkbox"/.test(content)) {
+        const clsMatch = attrs.match(/class="([^"]*)"/);
+        if (clsMatch) {
+          return `<li${attrs.replace(/class="[^"]*"/, `class="${clsMatch[1]} cbr-checked-item"`)}>${content}</li>`;
+        }
+        return `<li${attrs} class="cbr-checked-item">${content}</li>`;
+      }
+      return match;
+    });
+  }
+
+  // Add target="_blank" to links
+  result = result.replace(/<a(\s[^>]*)>/gi, (match, attrs) => {
+    if (/\btarget=/.test(attrs)) return match;
+    return `<a${attrs} target="_blank" rel="noopener noreferrer">`;
+  });
+
+  return result;
 }
 
 // Syntax Highlighted Code Component with Mac-style header (matching test-authorly-next)

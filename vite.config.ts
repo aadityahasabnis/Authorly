@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import dts from 'vite-plugin-dts';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { copyFileSync, existsSync } from 'fs';
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -19,6 +20,17 @@ export default defineConfig(({ mode }) => {
           insertTypesEntry: true,
           exclude: ['src/test/**', 'test/**'],
         }),
+        // Copy renderer.css to dist/ as a separate importable file
+        {
+          name: 'copy-renderer-css',
+          closeBundle() {
+            const src = path.resolve(__dirname, 'src/styles/renderer.css');
+            const dest = path.resolve(__dirname, 'dist/renderer.css');
+            if (existsSync(src)) {
+              copyFileSync(src, dest);
+            }
+          },
+        },
       ],
       build: {
         lib: {

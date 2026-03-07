@@ -20,6 +20,8 @@
     },
     "./styles": "./dist/authorly.css",
     "./styles.css": "./dist/authorly.css",
+    "./styles/renderer": "./dist/renderer.css",
+    "./styles/renderer.css": "./dist/renderer.css",
     "./package.json": "./package.json"
   },
   "files": [
@@ -27,6 +29,7 @@
     "dist/index.esm.js",
     "dist/index.d.ts",
     "dist/authorly.css",
+    "dist/renderer.css",
     "dist/src/**/*.d.ts",
     "README.md",
     "CHANGELOG.md",
