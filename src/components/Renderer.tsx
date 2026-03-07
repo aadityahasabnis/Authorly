@@ -14,7 +14,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { Highlight, themes } from 'prism-react-renderer';
+import { Highlight, Prism, normalizeTokens, themes } from 'prism-react-renderer';
 
 export interface AuthorlyRendererProps {
   /** HTML content to render */
@@ -59,8 +59,15 @@ export interface ProcessHtmlOptions {
   enableChecklistStyles?: boolean;
   /** Add id attributes to headings for anchor navigation. Default: true */
   enableHeadingIds?: boolean;
-  /** When true, skips code block wrapping (for use with AuthorlyRenderer's React syntax highlighting). Default: false */
+  /**
+   * When true, syntax-highlight code blocks using Prism (same engine as AuthorlyRenderer).
+   * Pass darkMode to select Night Owl (dark) or GitHub (light) theme. Default: false
+   */
   enableSyntaxHighlighting?: boolean;
+  /** Select Night Owl (dark) or GitHub (light) syntax theme. Default: false */
+  darkMode?: boolean;
+  /** @internal — used by AuthorlyRenderer to leave code blocks for React handling */
+  _skipCodeBlocks?: boolean;
 }
 
 /**
@@ -86,11 +93,13 @@ export interface ProcessHtmlOptions {
  */
 export function processHtml(html: string, options: ProcessHtmlOptions = {}): string {
   if (!html) return '';
-  const opts: Required<ProcessHtmlOptions> = {
+  const opts = {
     enableCodeCopy: options.enableCodeCopy ?? true,
     enableChecklistStyles: options.enableChecklistStyles ?? true,
     enableHeadingIds: options.enableHeadingIds ?? true,
     enableSyntaxHighlighting: options.enableSyntaxHighlighting ?? false,
+    darkMode: options.darkMode ?? false,
+    _skipCodeBlocks: options._skipCodeBlocks ?? false,
   };
   // Browser: DOMParser handles nested/malformed HTML more reliably
   if (typeof window !== 'undefined' && typeof DOMParser !== 'undefined') {
@@ -98,6 +107,129 @@ export function processHtml(html: string, options: ProcessHtmlOptions = {}): str
   }
   // SSR (Next.js server components, Node.js): regex-based fallback
   return _processHtmlRegex(html, opts);
+}
+
+// --- Syntax highlighting helpers (shared by DOM + regex paths) ---
+
+type TokenStyleMap = Map<string, { color?: string; fontStyle?: string; fontWeight?: string }>;
+
+function _buildTokenStyleMap(theme: typeof themes.nightOwl): TokenStyleMap {
+  const map: TokenStyleMap = new Map();
+  for (const { types, style } of theme.styles) {
+    const s = {
+      color: style.color as string | undefined,
+      fontStyle: style.fontStyle as string | undefined,
+      fontWeight: style.fontWeight as string | undefined,
+    };
+    for (const type of types) {
+      const existing = map.get(type) || {};
+      map.set(type, { ...existing, ...s });
+    }
+  }
+  return map;
+}
+
+function _getTokenInlineStyle(types: string[], map: TokenStyleMap): string {
+  let color: string | undefined;
+  let fontStyle: string | undefined;
+  let fontWeight: string | undefined;
+  for (const type of types) {
+    const s = map.get(type);
+    if (s) {
+      color = s.color ?? color;
+      fontStyle = s.fontStyle ?? fontStyle;
+      fontWeight = s.fontWeight ?? fontWeight;
+    }
+  }
+  const parts: string[] = [];
+  if (color) parts.push(`color:${color}`);
+  if (fontStyle) parts.push(`font-style:${fontStyle}`);
+  if (fontWeight) parts.push(`font-weight:${fontWeight}`);
+  return parts.join(';');
+}
+
+function _decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'");
+}
+
+/**
+ * Generate a full .cbr-code-wrapper HTML string with Prism syntax highlighting.
+ * Colors exactly match SyntaxHighlightedCode (same Prism engine, same theme objects).
+ */
+function _generateHighlightedCodeHtml(
+  rawCode: string,
+  language: string,
+  darkMode: boolean,
+  enableCopy: boolean,
+): string {
+  const theme = darkMode ? themes.nightOwl : themes.github;
+  const tokenStyleMap = _buildTokenStyleMap(theme);
+  const plainColor = (theme.plain as { color?: string }).color || (darkMode ? '#d6deeb' : '#393a34');
+  const lineNumColor = darkMode ? '#52525b' : '#d4d4d8';
+
+  const langKey = language?.toLowerCase() || '';
+  const grammar = langKey ? (Prism.languages as Record<string, unknown>)[langKey] : null;
+
+  let innerHtml: string;
+  if (grammar) {
+    try {
+      const rawTokens = Prism.tokenize(rawCode.trim(), grammar as Prism.Grammar);
+      const lines = normalizeTokens(rawTokens as Parameters<typeof normalizeTokens>[0]);
+      innerHtml = lines.map((line, i) => {
+        const cells = line.map(token => {
+          const inlineStyle = _getTokenInlineStyle(token.types, tokenStyleMap);
+          const content = escapeHtml(token.content);
+          return inlineStyle ? `<span style="${inlineStyle}">${content}</span>` : content;
+        }).join('');
+        const lineNum = `<span style="display:table-cell;padding-right:1rem;text-align:right;min-width:2rem;color:${lineNumColor};user-select:none">${i + 1}</span>`;
+        return `<span style="display:table-row">${lineNum}<span style="display:table-cell">${cells}</span></span>`;
+      }).join('');
+    } catch {
+      innerHtml = escapeHtml(rawCode.trim());
+    }
+  } else {
+    innerHtml = escapeHtml(rawCode.trim());
+  }
+
+  const displayLang = language && language !== 'text' && language !== 'plain' ? language : '';
+  const dataCode = escapeHtml(rawCode);
+
+  const copyBtn = enableCopy
+    ? `<button class="cbr-code-copy" onclick="(function(b){` +
+        `navigator.clipboard.writeText(b.closest('.cbr-code-wrapper').dataset.code);` +
+        `var p=b.innerHTML;b.innerHTML='Copied!';b.style.color='#22c55e';` +
+        `setTimeout(function(){b.innerHTML=p;b.style.color=''},2000)` +
+      `})(this)">` +
+      `<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
+        `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>` +
+      `</svg>Copy</button>`
+    : '';
+
+  return (
+    `<div class="cbr-code-wrapper" data-code="${dataCode}">` +
+      `<div class="cbr-code-toolbar">` +
+        `<div class="cbr-code-toolbar-left">` +
+          `<div class="cbr-code-dots">` +
+            `<span class="cbr-code-dot cbr-code-dot-red"></span>` +
+            `<span class="cbr-code-dot cbr-code-dot-yellow"></span>` +
+            `<span class="cbr-code-dot cbr-code-dot-green"></span>` +
+          `</div>` +
+          (displayLang ? `<span class="cbr-code-lang">${displayLang}</span>` : '') +
+        `</div>` +
+        copyBtn +
+      `</div>` +
+      `<pre class="cbr-code-block">` +
+        `<code style="display:table;width:100%;color:${plainColor}">` +
+          innerHtml +
+        `</code>` +
+      `</pre>` +
+    `</div>`
+  );
 }
 
 // --- DOMParser implementation (browser) ---
@@ -115,9 +247,9 @@ function _processHtmlDom(html: string, options: Required<ProcessHtmlOptions>): s
     });
   }
 
-  // Enhance code blocks with wrapper and copy button
-  // Skip this if syntax highlighting is enabled (handled by SyntaxHighlightedCode React component)
-  if (options.enableCodeCopy && !options.enableSyntaxHighlighting) {
+  // Enhance code blocks with wrapper and (optionally) Prism syntax highlighting.
+  // Skip entirely when AuthorlyRenderer will handle code blocks with React.
+  if (!options._skipCodeBlocks) {
     const codeBlocks = doc.querySelectorAll('pre');
     codeBlocks.forEach((pre, index) => {
       if (pre.parentElement?.classList.contains('cbr-code-wrapper')) return;
@@ -125,15 +257,31 @@ function _processHtmlDom(html: string, options: Required<ProcessHtmlOptions>): s
       const code = pre.querySelector('code');
       const codeContent = code?.textContent || pre.textContent || '';
 
-      let language = pre.getAttribute('data-language') || 'Code';
-      if (!language || language === 'Code') {
+      let language = pre.getAttribute('data-language') || '';
+      if (!language) {
         const codeClass = code?.className || '';
         const langMatch = codeClass.match(/language-(\w+)/);
-        if (langMatch) {
-          language = langMatch[1].charAt(0).toUpperCase() + langMatch[1].slice(1);
-        }
+        if (langMatch) language = langMatch[1];
       }
 
+      if (options.enableSyntaxHighlighting) {
+        // Generate Prism-highlighted HTML — matches SyntaxHighlightedCode visually
+        const tempDiv = doc.createElement('div');
+        tempDiv.innerHTML = _generateHighlightedCodeHtml(
+          codeContent,
+          language,
+          options.darkMode,
+          options.enableCodeCopy,
+        );
+        const generatedWrapper = tempDiv.firstElementChild;
+        if (generatedWrapper) pre.replaceWith(generatedWrapper);
+        return;
+      }
+
+      if (!options.enableCodeCopy) return;
+
+      // Plain code block wrapper (no syntax highlighting)
+      const displayLang = language || 'Code';
       const wrapper = doc.createElement('div');
       wrapper.className = 'cbr-code-wrapper';
       wrapper.innerHTML = `
@@ -144,7 +292,7 @@ function _processHtmlDom(html: string, options: Required<ProcessHtmlOptions>): s
               <span class="cbr-code-dot cbr-code-dot-yellow"></span>
               <span class="cbr-code-dot cbr-code-dot-green"></span>
             </div>
-            <span class="cbr-code-lang">${escapeHtml(language)}</span>
+            <span class="cbr-code-lang">${escapeHtml(displayLang)}</span>
           </div>
           <button class="cbr-code-copy" data-code-index="${index}" onclick="
             navigator.clipboard.writeText(this.closest('.cbr-code-wrapper').querySelector('code').textContent);
@@ -154,7 +302,6 @@ function _processHtmlDom(html: string, options: Required<ProcessHtmlOptions>): s
         </div>
         <pre class="cbr-code-block"><code>${escapeHtml(codeContent)}</code></pre>
       `;
-
       pre.replaceWith(wrapper);
     });
   }
@@ -221,18 +368,31 @@ function _processHtmlRegex(html: string, options: Required<ProcessHtmlOptions>):
     });
   }
 
-  // Wrap code blocks with mac-dots toolbar
-  if (options.enableCodeCopy && !options.enableSyntaxHighlighting) {
+  // Wrap / syntax-highlight code blocks — skip when AuthorlyRenderer will handle them
+  if (!options._skipCodeBlocks) {
     result = result.replace(
       /<pre([^>]*)><code([^>]*)>([\s\S]*?)<\/code><\/pre>/gi,
       (_, preAttrs, codeAttrs, content) => {
-        let lang = 'Code';
+        let lang = '';
         const m1 = preAttrs.match(/data-language="([^"]*)"/i);
         const m2 = codeAttrs.match(/language-(\w+)/i);
         if (m1?.[1]) lang = m1[1];
-        else if (m2?.[1]) lang = m2[1].charAt(0).toUpperCase() + m2[1].slice(1);
-        const safeL = lang.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        // Note: content is already HTML-escaped by the editor
+        else if (m2?.[1]) lang = m2[1];
+
+        if (options.enableSyntaxHighlighting) {
+          // content is HTML-escaped by the editor — decode before tokenising
+          const rawCode = _decodeHtmlEntities(content);
+          return _generateHighlightedCodeHtml(rawCode, lang, options.darkMode, options.enableCodeCopy);
+        }
+
+        if (!options.enableCodeCopy) {
+          // No toolbar at all — return a plain pre/code unchanged
+          return `<pre${preAttrs}><code${codeAttrs}>${content}</code></pre>`;
+        }
+
+        // Plain wrapper (toolbar, no syntax highlighting)
+        const displayLang = lang || 'Code';
+        const safeL = displayLang.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         return (
           `<div class="cbr-code-wrapper">` +
             `<div class="cbr-code-toolbar">` +
@@ -850,15 +1010,17 @@ export const AuthorlyRenderer: React.FC<AuthorlyRendererProps> = ({
   enableSyntaxHighlighting = true,
   classPrefix = 'cbr-content',
 }) => {
-  // Process HTML
+  // Process HTML — when enableSyntaxHighlighting is on, React handles code blocks
+  // via SyntaxHighlightedCode, so tell processHtml to leave <pre> elements alone.
   const processedHtml = useMemo(() => {
     return processHtml(html, {
       enableCodeCopy,
       enableChecklistStyles,
       enableHeadingIds,
-      enableSyntaxHighlighting,
+      _skipCodeBlocks: enableSyntaxHighlighting,
+      darkMode,
     });
-  }, [html, enableCodeCopy, enableChecklistStyles, enableHeadingIds, enableSyntaxHighlighting]);
+  }, [html, enableCodeCopy, enableChecklistStyles, enableHeadingIds, enableSyntaxHighlighting, darkMode]);
 
   // Generate styles
   const styles = useMemo(() => {

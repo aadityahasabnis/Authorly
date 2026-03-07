@@ -337,7 +337,8 @@ export const Playground: React.FC = () => {
                       enableCodeCopy: true,
                       enableChecklistStyles: true,
                       enableHeadingIds: true,
-                      enableSyntaxHighlighting: false,
+                      enableSyntaxHighlighting: true,
+                      darkMode,
                     }) }}
                   />
                 )}

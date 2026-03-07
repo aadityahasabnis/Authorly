@@ -7,6 +7,7 @@
 
 // Styles
 import './styles/editor.css';
+import './styles/renderer.css';
 
 // Main components
 export { 
