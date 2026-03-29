@@ -1,4 +1,4 @@
-# Block Types Reference
+# Block Types Reference 
 
 Authorly supports 15 block types for rich content creation.
 
