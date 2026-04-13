@@ -4,10 +4,11 @@ import { TestPage } from './TestPage';
 import { NewDeveloperPage } from './NewDeveloperPage';
 import { DeveloperExample } from './DeveloperExample';
 import { Playground } from './Playground';
+import { PreviewPage } from './PreviewPage';
 
 // Simple hash-based router
 const App: React.FC = () => {
-  const [page, setPage] = useState<'playground' | 'test' | 'developer' | 'docs'>('playground');
+  const [page, setPage] = useState<'playground' | 'test' | 'developer' | 'docs' | 'preview'>('playground');
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -15,9 +16,10 @@ const App: React.FC = () => {
       if (hash === 'test') setPage('test');
       else if (hash === 'developer') setPage('developer');
       else if (hash === 'docs') setPage('docs');
+      else if (hash === 'preview') setPage('preview');
       else setPage('playground');
     };
-    
+
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -53,11 +55,13 @@ const App: React.FC = () => {
       <nav style={navStyle}>
         <a href="#playground" style={linkStyle(page === 'playground')}>Playground</a>
         <a href="#test" style={linkStyle(page === 'test')}>Test Page</a>
+        <a href="#preview" style={linkStyle(page === 'preview')}>Preview</a>
         <a href="#developer" style={linkStyle(page === 'developer')}>Simple Example</a>
         <a href="#docs" style={linkStyle(page === 'docs')}>Full Docs</a>
       </nav>
       {page === 'playground' && <Playground />}
       {page === 'test' && <TestPage />}
+      {page === 'preview' && <PreviewPage />}
       {page === 'developer' && <DeveloperExample />}
       {page === 'docs' && <NewDeveloperPage />}
     </>
